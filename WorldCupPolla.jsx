@@ -4,31 +4,60 @@ import { db, FB_READY } from './src/firebase.js';
 import { ref, onValue, set } from 'firebase/database';
 
 // ── Partidos Jue 25 – Sáb 27 Jun 2026 · Fase de Grupos Jornada 3 ─────────────
-//    Fuente: Flashscore / ESPN / FIFA
 
 const MATCHES = [
   // ── Jueves 25 Jun — Grupos D · E · F ──────────────────────────────────────
-  { id:'E1', date:'25/06', group:'E', home:'Curazao',      homeFlag:'🇨🇼', away:'Costa de Marfil', awayFlag:'🇨🇮', time:'15:00', venue:'Philadelphia'  },
-  { id:'E2', date:'25/06', group:'E', home:'Ecuador',      homeFlag:'🇪🇨', away:'Alemania',         awayFlag:'🇩🇪', time:'15:00', venue:'Nueva Jersey'  },
-  { id:'F1', date:'25/06', group:'F', home:'Japón',        homeFlag:'🇯🇵', away:'Suecia',           awayFlag:'🇸🇪', time:'18:00', venue:'Dallas'        },
-  { id:'F2', date:'25/06', group:'F', home:'Túnez',        homeFlag:'🇹🇳', away:'Países Bajos',    awayFlag:'🇳🇱', time:'18:00', venue:'Kansas City'   },
-  { id:'D1', date:'25/06', group:'D', home:'Paraguay',     homeFlag:'🇵🇾', away:'Australia',        awayFlag:'🇦🇺', time:'21:00', venue:'San Francisco' },
-  { id:'D2', date:'25/06', group:'D', home:'Turquía',      homeFlag:'🇹🇷', away:'Estados Unidos',  awayFlag:'🇺🇸', time:'21:00', venue:'Los Ángeles'   },
+  { id:'E1', date:'25/06', group:'E', home:'Curazao',       away:'Costa de Marfil', time:'15:00', venue:'Philadelphia'  },
+  { id:'E2', date:'25/06', group:'E', home:'Ecuador',       away:'Alemania',         time:'15:00', venue:'Nueva Jersey'  },
+  { id:'F1', date:'25/06', group:'F', home:'Japón',         away:'Suecia',           time:'18:00', venue:'Dallas'        },
+  { id:'F2', date:'25/06', group:'F', home:'Túnez',         away:'Países Bajos',    time:'18:00', venue:'Kansas City'   },
+  { id:'D1', date:'25/06', group:'D', home:'Paraguay',      away:'Australia',        time:'21:00', venue:'San Francisco' },
+  { id:'D2', date:'25/06', group:'D', home:'Turquía',       away:'Estados Unidos',  time:'21:00', venue:'Los Ángeles'   },
   // ── Viernes 26 Jun — Grupos G · H · I ─────────────────────────────────────
-  { id:'I1', date:'26/06', group:'I', home:'Noruega',      homeFlag:'🇳🇴', away:'Francia',          awayFlag:'🇫🇷', time:'14:00', venue:'Boston'        },
-  { id:'I2', date:'26/06', group:'I', home:'Senegal',      homeFlag:'🇸🇳', away:'Irak',             awayFlag:'🇮🇶', time:'14:00', venue:'Toronto'       },
-  { id:'H1', date:'26/06', group:'H', home:'Cabo Verde',   homeFlag:'🇨🇻', away:'Arabia Saudita',  awayFlag:'🇸🇦', time:'19:00', venue:'Houston'       },
-  { id:'H2', date:'26/06', group:'H', home:'Uruguay',      homeFlag:'🇺🇾', away:'España',           awayFlag:'🇪🇸', time:'19:00', venue:'Guadalajara'   },
-  { id:'G1', date:'26/06', group:'G', home:'Egipto',       homeFlag:'🇪🇬', away:'Irán',             awayFlag:'🇮🇷', time:'22:00', venue:'Seattle'       },
-  { id:'G2', date:'26/06', group:'G', home:'Nueva Zelanda',homeFlag:'🇳🇿', away:'Bélgica',          awayFlag:'🇧🇪', time:'22:00', venue:'Vancouver'     },
+  { id:'I1', date:'26/06', group:'I', home:'Noruega',       away:'Francia',          time:'14:00', venue:'Boston'        },
+  { id:'I2', date:'26/06', group:'I', home:'Senegal',       away:'Irak',             time:'14:00', venue:'Toronto'       },
+  { id:'H1', date:'26/06', group:'H', home:'Cabo Verde',    away:'Arabia Saudita',  time:'19:00', venue:'Houston'       },
+  { id:'H2', date:'26/06', group:'H', home:'Uruguay',       away:'España',           time:'19:00', venue:'Guadalajara'   },
+  { id:'G1', date:'26/06', group:'G', home:'Egipto',        away:'Irán',             time:'22:00', venue:'Seattle'       },
+  { id:'G2', date:'26/06', group:'G', home:'Nueva Zelanda', away:'Bélgica',          time:'22:00', venue:'Vancouver'     },
   // ── Sábado 27 Jun — Grupos J · K · L ──────────────────────────────────────
-  { id:'L1', date:'27/06', group:'L', home:'Croacia',      homeFlag:'🇭🇷', away:'Ghana',            awayFlag:'🇬🇭', time:'16:00', venue:'Philadelphia'  },
-  { id:'L2', date:'27/06', group:'L', home:'Panamá',       homeFlag:'🇵🇦', away:'Inglaterra',       awayFlag:'🏴󠁧󠁢󠁥󠁮󠁧󠁿', time:'16:00', venue:'Nueva Jersey'  },
-  { id:'K1', date:'27/06', group:'K', home:'Colombia',     homeFlag:'🇨🇴', away:'Portugal',         awayFlag:'🇵🇹', time:'18:30', venue:'Miami'         },
-  { id:'K2', date:'27/06', group:'K', home:'RD Congo',     homeFlag:'🇨🇩', away:'Uzbekistán',       awayFlag:'🇺🇿', time:'18:30', venue:'Atlanta'       },
-  { id:'J1', date:'27/06', group:'J', home:'Argelia',      homeFlag:'🇩🇿', away:'Austria',          awayFlag:'🇦🇹', time:'21:00', venue:'Kansas City'   },
-  { id:'J2', date:'27/06', group:'J', home:'Jordania',     homeFlag:'🇯🇴', away:'Argentina',        awayFlag:'🇦🇷', time:'21:00', venue:'Dallas'        },
+  { id:'L1', date:'27/06', group:'L', home:'Croacia',       away:'Ghana',            time:'16:00', venue:'Philadelphia'  },
+  { id:'L2', date:'27/06', group:'L', home:'Panamá',        away:'Inglaterra',       time:'16:00', venue:'Nueva Jersey'  },
+  { id:'K1', date:'27/06', group:'K', home:'Colombia',      away:'Portugal',         time:'18:30', venue:'Miami'         },
+  { id:'K2', date:'27/06', group:'K', home:'RD Congo',      away:'Uzbekistán',       time:'18:30', venue:'Atlanta'       },
+  { id:'J1', date:'27/06', group:'J', home:'Argelia',       away:'Austria',          time:'21:00', venue:'Kansas City'   },
+  { id:'J2', date:'27/06', group:'J', home:'Jordania',      away:'Argentina',        time:'21:00', venue:'Dallas'        },
 ];
+
+// Códigos ISO 3166-1 alpha-2 para flagcdn.com
+const FLAG = {
+  'Curazao':       'cw', 'Costa de Marfil': 'ci', 'Ecuador':       'ec',
+  'Alemania':      'de', 'Japón':           'jp', 'Suecia':        'se',
+  'Túnez':         'tn', 'Países Bajos':    'nl', 'Paraguay':      'py',
+  'Australia':     'au', 'Turquía':         'tr', 'Estados Unidos':'us',
+  'Noruega':       'no', 'Francia':         'fr', 'Senegal':       'sn',
+  'Irak':          'iq', 'Cabo Verde':      'cv', 'Arabia Saudita':'sa',
+  'Uruguay':       'uy', 'España':          'es', 'Egipto':        'eg',
+  'Irán':          'ir', 'Nueva Zelanda':   'nz', 'Bélgica':       'be',
+  'Croacia':       'hr', 'Ghana':           'gh', 'Panamá':        'pa',
+  'Inglaterra':  'gb-eng','Colombia':       'co', 'Portugal':      'pt',
+  'RD Congo':      'cd', 'Uzbekistán':      'uz', 'Argelia':       'dz',
+  'Austria':       'at', 'Jordania':        'jo', 'Argentina':     'ar',
+};
+
+const FlagImg = ({ team, size = 28 }) => {
+  const code = FLAG[team];
+  if (!code) return <span className="text-gray-500 text-xs">{team?.[0]}</span>;
+  return (
+    <img
+      src={`https://flagcdn.com/w${size * 2}/${code}.png`}
+      alt={team}
+      width={size}
+      height={Math.round(size * 0.67)}
+      style={{ objectFit:'cover', borderRadius:2, flexShrink:0, display:'inline-block' }}
+    />
+  );
+};
 
 const DATES = [
   { key:'25/06', short:'Jue 25', label:'Jueves 25 Jun',  phase:'Grupos D · E · F' },
@@ -254,7 +283,7 @@ export default function WorldCupPolla() {
 
   // ── Sub-componentes ───────────────────────────────────────────────────────
 
-  const DateTabs = ({ value, onChange, compact }) => (
+  const DateTabs = ({ value, onChange }) => (
     <div className="flex gap-1 overflow-x-auto">
       {DATES.map(d => (
         <button key={d.key} onClick={() => onChange(d.key)}
@@ -263,7 +292,7 @@ export default function WorldCupPolla() {
               ? 'bg-green-500 text-black shadow-md'
               : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
           }`}>
-          {compact ? d.short : d.short}
+          {d.short}
         </button>
       ))}
     </div>
@@ -272,9 +301,9 @@ export default function WorldCupPolla() {
   const MatchRow = ({ m, homeVal, awayVal, onHome, onAway, disabled, gold }) => (
     <div className={`rounded-xl overflow-hidden transition-colors ${disabled ? 'bg-white/2' : 'bg-white/5 hover:bg-white/8'}`}>
       <div className="flex items-center gap-2 p-3">
-        <div className="flex-1 flex items-center justify-end gap-1.5 min-w-0">
+        <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
           <span className="text-gray-200 text-xs font-semibold truncate hidden sm:block">{m.home}</span>
-          <span className="text-2xl flex-shrink-0">{m.homeFlag}</span>
+          <FlagImg team={m.home} size={28} />
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <input type="number" min="0" max="20" placeholder="0"
@@ -293,8 +322,8 @@ export default function WorldCupPolla() {
             style={gold && !disabled ? { borderColor:'rgba(245,158,11,0.5)' } : {}}
           />
         </div>
-        <div className="flex-1 flex items-center gap-1.5 min-w-0">
-          <span className="text-2xl flex-shrink-0">{m.awayFlag}</span>
+        <div className="flex-1 flex items-center gap-2 min-w-0">
+          <FlagImg team={m.away} size={28} />
           <span className="text-gray-200 text-xs font-semibold truncate hidden sm:block">{m.away}</span>
         </div>
       </div>
@@ -428,7 +457,7 @@ export default function WorldCupPolla() {
               </p>
             </div>
 
-            {/* Calendario de partidos por fecha */}
+            {/* Calendario */}
             <div className={`${glass} p-5`}>
               <h3 className="text-green-400 font-bold mb-4 flex items-center gap-2">
                 <Calendar size={15}/> Partidos · 25–27 Jun 2026
@@ -447,14 +476,20 @@ export default function WorldCupPolla() {
                           </div>
                           {dateMatches(activeDate).filter(m => m.time===time).map(m => (
                             <div key={m.id} className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-2.5 mb-1">
-                              <span className="font-semibold text-sm">{m.homeFlag} {m.home}</span>
-                              <div className="text-center">
+                              <div className="flex items-center gap-2">
+                                <FlagImg team={m.home} size={22}/>
+                                <span className="font-semibold text-sm">{m.home}</span>
+                              </div>
+                              <div className="text-center px-2">
                                 {real[m.id]?.home != null && real[m.id]?.home !== ''
                                   ? <span className="font-black text-white">{real[m.id].home} – {real[m.id].away}</span>
                                   : <span className="text-gray-600 text-xs font-bold">VS</span>
                                 }
                               </div>
-                              <span className="font-semibold text-sm">{m.away} {m.awayFlag}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-sm">{m.away}</span>
+                                <FlagImg team={m.away} size={22}/>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -531,7 +566,6 @@ export default function WorldCupPolla() {
               </div>
             ) : (
               <>
-                {/* Cabecera */}
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm text-black"
@@ -559,10 +593,8 @@ export default function WorldCupPolla() {
                   }
                 </div>
 
-                {/* Selector de fecha */}
                 <DateTabs value={activeDate} onChange={setActiveDate} />
 
-                {/* Partidos del día seleccionado */}
                 {(() => {
                   const d = DATES.find(d => d.key === activeDate);
                   return (
@@ -603,7 +635,6 @@ export default function WorldCupPolla() {
                   );
                 })()}
 
-                {/* Botón guardar */}
                 {!isLocked && (
                   <div className={`${glass} p-4`}>
                     <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
@@ -623,7 +654,7 @@ export default function WorldCupPolla() {
 
                     {filledCount < MATCHES.length && (
                       <div className="mb-3 text-xs text-gray-500 bg-white/3 rounded-xl p-3">
-                        <p className="font-semibold text-yellow-400 mb-1">⚠️ Partidos sin pronosticar:</p>
+                        <p className="font-semibold text-yellow-400 mb-1">Partidos sin pronosticar:</p>
                         <div className="grid grid-cols-3 gap-1">
                           {DATES.map(d => {
                             const missing = dateMatches(d.key).filter(m => {
@@ -658,13 +689,12 @@ export default function WorldCupPolla() {
                     </button>
                     {filledCount > 0 && filledCount < MATCHES.length && (
                       <p className="text-center text-xs text-gray-500 mt-2">
-                        Puedes guardar ahora — los {MATCHES.length - filledCount} restantes quedarán en blanco (0 pts).
+                        Los {MATCHES.length - filledCount} sin completar quedarán en 0 pts.
                       </p>
                     )}
                   </div>
                 )}
 
-                {/* Resumen bloqueado */}
                 {isLocked && (
                   <div className={`${glass} p-4`}>
                     <h3 className="text-green-400 font-bold text-sm mb-3 flex items-center gap-2">
@@ -679,11 +709,17 @@ export default function WorldCupPolla() {
                             const filled = p?.home != null && p?.home !== '' && p?.away != null && p?.away !== '';
                             return (
                               <div key={m.id} className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
-                                <span className="text-xs text-gray-300">{m.homeFlag} {m.home}</span>
+                                <div className="flex items-center gap-1.5">
+                                  <FlagImg team={m.home} size={18}/>
+                                  <span className="text-xs text-gray-300">{m.home}</span>
+                                </div>
                                 <span className="font-black text-sm mx-2" style={{ color: filled ? '#f59e0b' : '#374151' }}>
                                   {filled ? `${p.home} – ${p.away}` : '–'}
                                 </span>
-                                <span className="text-xs text-gray-300">{m.away} {m.awayFlag}</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs text-gray-300">{m.away}</span>
+                                  <FlagImg team={m.away} size={18}/>
+                                </div>
                               </div>
                             );
                           })}
@@ -724,7 +760,7 @@ export default function WorldCupPolla() {
                         </div>
                         <div className="text-xs text-gray-400 mt-0.5">
                           <span className="text-green-400 font-bold">{p.exact}</span> exactos · <span className="text-blue-400 font-bold">{p.correct}</span> ganador
-                          <span className="text-gray-600"> · {countFilled(predictions[p.id]||{})}/{MATCHES.length} pronósticos</span>
+                          <span className="text-gray-600"> · {countFilled(predictions[p.id]||{})}/{MATCHES.length}</span>
                         </div>
                       </div>
                       <div className="text-right"><div className="font-black text-2xl" style={{ color:'#f59e0b' }}>{p.pts}</div><div className="text-xs text-gray-500">pts</div></div>
@@ -736,7 +772,7 @@ export default function WorldCupPolla() {
 
             {hasRealResults && (
               <div className={`${glass} p-4`}>
-                <h3 className="text-green-400 font-bold mb-4">✅ Resultados Reales</h3>
+                <h3 className="text-green-400 font-bold mb-4">Resultados Reales</h3>
                 {DATES.map(d => {
                   const played = dateMatches(d.key).filter(m => real[m.id]?.home != null && real[m.id]?.home !== '');
                   if (!played.length) return null;
@@ -746,9 +782,15 @@ export default function WorldCupPolla() {
                       <div className="space-y-2">
                         {played.map(m => (
                           <div key={m.id} className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-2.5">
-                            <span className="text-sm font-semibold">{m.homeFlag} {m.home}</span>
+                            <div className="flex items-center gap-2">
+                              <FlagImg team={m.home} size={20}/>
+                              <span className="text-sm font-semibold">{m.home}</span>
+                            </div>
                             <span className="font-black text-xl text-white px-3">{real[m.id].home} – {real[m.id].away}</span>
-                            <span className="text-sm font-semibold">{m.away} {m.awayFlag}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold">{m.away}</span>
+                              <FlagImg team={m.away} size={20}/>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -784,7 +826,12 @@ export default function WorldCupPolla() {
                         const hasR = r?.home != null && r?.home !== '';
                         return (
                           <tr key={m.id} className="border-t border-white/5">
-                            <td className="py-2 pr-3 text-gray-300 whitespace-nowrap">{m.homeFlag} vs {m.awayFlag} <span className="text-gray-600 hidden sm:inline">Gr.{m.group}</span></td>
+                            <td className="py-2 pr-3 text-gray-300 whitespace-nowrap">
+                              <div className="flex items-center gap-1">
+                                <FlagImg team={m.home} size={14}/> vs <FlagImg team={m.away} size={14}/>
+                                <span className="text-gray-600 ml-1 hidden sm:inline">Gr.{m.group}</span>
+                              </div>
+                            </td>
                             {hasRealResults && <td className="py-2 px-2 text-center font-black text-white">{hasR ? `${r.home}-${r.away}` : '–'}</td>}
                             {partList.map(p => {
                               const pred = predictions[p.id]?.[m.id];
@@ -874,7 +921,7 @@ export default function WorldCupPolla() {
       </main>
 
       <footer className="text-center py-8 text-gray-600 text-xs">
-        ⚽ Polla Mundial 2026 · 25–27 Jun · {FB_READY && connected ? 'Firebase sync' : 'Modo local'}
+        Polla Mundial 2026 · 25–27 Jun · {FB_READY && connected ? 'Firebase sync' : 'Modo local'}
       </footer>
     </div>
   );
