@@ -29,7 +29,6 @@ const MATCHES = [
   { id:'J2', date:'27/06', group:'J', home:'Jordania',      away:'Argentina',        time:'21:00', venue:'Dallas'        },
 ];
 
-// Códigos ISO 3166-1 alpha-2 para flagcdn.com
 const FLAG = {
   'Curazao':       'cw', 'Costa de Marfil': 'ci', 'Ecuador':       'ec',
   'Alemania':      'de', 'Japón':           'jp', 'Suecia':        'se',
@@ -73,8 +72,17 @@ const PIN       = '2026';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const dateMatches = (d) => MATCHES.filter(m => m.date === d);
-const dateSlots   = (d) => [...new Set(dateMatches(d).map(m => m.time))].sort();
+const toFbKey  = (date) => date.replace('/', '_');           // '25/06' → '25_06'
+const fromDate = (date) => MATCHES.filter(m => m.date === date);
+const slotsFor = (date) => [...new Set(fromDate(date).map(m => m.time))].sort();
+
+// locked[pid] puede ser { '25_06': true } (nuevo) o true (legacy)
+const isDateLocked = (locked, pid, date) => {
+  const l = locked[pid];
+  if (!l) return false;
+  if (l === true) return true;
+  return Boolean(l[toFbKey(date)]);
+};
 
 const getResult = (h, a) => {
   const ph = parseInt(h), pa = parseInt(a);
@@ -85,12 +93,10 @@ const getResult = (h, a) => {
 const calcScore = (pred, real) => {
   let pts = 0, exact = 0, correct = 0;
   MATCHES.forEach(({ id }) => {
-    const r = real?.[id];
-    const p = pred?.[id];
-    if (!r || r.home == null || r.home === '' || r.away == null || r.away === '') return;
-    if (!p || p.home == null || p.home === '' || p.away == null || p.away === '') return;
-    const rr = getResult(r.home, r.away);
-    const pr = getResult(p.home, p.away);
+    const r = real?.[id]; const p = pred?.[id];
+    if (!r?.home && r?.home !== 0) return;
+    if (!p?.home && p?.home !== 0) return;
+    const rr = getResult(r.home, r.away), pr = getResult(p.home, p.away);
     if (!rr || !pr) return;
     if (+p.home === +r.home && +p.away === +r.away) { pts += 3; exact++; }
     else if (pr === rr) { pts += 1; correct++; }
@@ -98,9 +104,9 @@ const calcScore = (pred, real) => {
   return { pts, exact, correct };
 };
 
-const countFilled = (pred) =>
-  MATCHES.filter(m => {
-    const p = pred?.[m.id];
+const filledForDate = (draft, date) =>
+  fromDate(date).filter(m => {
+    const p = draft?.[m.id];
     return p?.home != null && p?.home !== '' && p?.away != null && p?.away !== '';
   }).length;
 
@@ -141,6 +147,10 @@ export default function WorldCupPolla() {
   // ── Init ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    const loadDraft = (sid) => {
+      try { const d = localStorage.getItem(`draft_${sid}`); if (d) setDraft(JSON.parse(d)); } catch {}
+    };
+
     if (!FB_READY) {
       try {
         const saved = JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}');
@@ -151,9 +161,7 @@ export default function WorldCupPolla() {
         const sid = sessionStorage.getItem(SID_KEY);
         if (sid && saved.participants?.[sid]) {
           setCurrent(saved.participants[sid]);
-          if (!saved.locked?.[sid]) {
-            try { const d = localStorage.getItem(`draft_${sid}`); if (d) setDraft(JSON.parse(d)); } catch {}
-          }
+          loadDraft(sid);
           setTab('pronosticos');
         }
       } catch {}
@@ -171,9 +179,7 @@ export default function WorldCupPolla() {
       const sid = sessionStorage.getItem(SID_KEY);
       if (sid && data.participants?.[sid]) {
         setCurrent(data.participants[sid]);
-        if (!data.locked?.[sid]) {
-          try { const d = localStorage.getItem(`draft_${sid}`); if (d) setDraft(JSON.parse(d)); } catch {}
-        }
+        loadDraft(sid);
         setTab(prev => prev === 'inicio' ? 'pronosticos' : prev);
       }
       initialRef.current = false;
@@ -192,7 +198,7 @@ export default function WorldCupPolla() {
   const showToast = (msg) => {
     setToast(msg);
     clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setToast(''), 3000);
+    timerRef.current = setTimeout(() => setToast(''), 3200);
   };
 
   // ── Handlers ──────────────────────────────────────────────────────────────
@@ -204,9 +210,7 @@ export default function WorldCupPolla() {
     if (existing) {
       setCurrent(existing);
       sessionStorage.setItem(SID_KEY, existing.id);
-      if (!locked[existing.id]) {
-        try { const d = localStorage.getItem(`draft_${existing.id}`); setDraft(d ? JSON.parse(d) : {}); } catch { setDraft({}); }
-      }
+      try { const d = localStorage.getItem(`draft_${existing.id}`); setDraft(d ? JSON.parse(d) : {}); } catch { setDraft({}); }
       setNameInput(''); setTab('pronosticos');
       showToast(`¡Bienvenido de vuelta, ${existing.name}! 👋`);
       return;
@@ -223,7 +227,9 @@ export default function WorldCupPolla() {
   };
 
   const updateDraft = (matchId, field, value) => {
-    if (!current || locked[current.id]) return;
+    if (!current) return;
+    const m = MATCHES.find(x => x.id === matchId);
+    if (!m || isDateLocked(locked, current.id, m.date)) return;
     setDraft(prev => {
       const next = { ...prev, [matchId]: { ...(prev[matchId] ?? {}), [field]: value } };
       localStorage.setItem(`draft_${current.id}`, JSON.stringify(next));
@@ -231,17 +237,28 @@ export default function WorldCupPolla() {
     });
   };
 
-  const savePredictions = async () => {
-    if (!current || locked[current.id]) return;
+  // Guarda y bloquea solo los partidos de la fecha indicada
+  const saveDatePredictions = async (date) => {
+    if (!current || isDateLocked(locked, current.id, date)) return;
+    const dk = toFbKey(date);
+
+    // Mezcla predicciones ya guardadas con el draft actual para esta fecha
+    const merged = { ...(predictions[current.id] ?? {}) };
+    fromDate(date).forEach(m => {
+      if (draft[m.id]) merged[m.id] = draft[m.id];
+    });
+
     if (FB_READY) {
-      await set(ref(db, `${DB_PATH}/predictions/${current.id}`), draft);
-      await set(ref(db, `${DB_PATH}/locked/${current.id}`), true);
+      await set(ref(db, `${DB_PATH}/predictions/${current.id}`), merged);
+      await set(ref(db, `${DB_PATH}/locked/${current.id}/${dk}`), true);
     } else {
-      setPredictions(prev => ({ ...prev, [current.id]: draft }));
-      setLocked(prev     => ({ ...prev, [current.id]: true  }));
+      setPredictions(prev => ({ ...prev, [current.id]: merged }));
+      setLocked(prev => ({
+        ...prev,
+        [current.id]: { ...(typeof prev[current.id]==='object' ? prev[current.id] : {}), [dk]: true },
+      }));
     }
-    localStorage.removeItem(`draft_${current.id}`);
-    showToast('🔒 Pronósticos guardados y bloqueados para siempre');
+    showToast(`🔒 ${DATES.find(d=>d.key===date)?.label} guardado y bloqueado`);
   };
 
   const setRealResult = async (matchId, field, value) => {
@@ -261,10 +278,15 @@ export default function WorldCupPolla() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
-  const partList    = useMemo(() => Object.values(participants).sort((a,b) => Number(a.id)-Number(b.id)), [participants]);
-  const isLocked    = current ? Boolean(locked[current.id]) : false;
-  const myPred      = isLocked ? (predictions[current?.id] ?? {}) : draft;
-  const filledCount = countFilled(draft);
+  const partList = useMemo(() => Object.values(participants).sort((a,b) => Number(a.id)-Number(b.id)), [participants]);
+
+  // Para un partido dado, obtiene el pronóstico vigente (Firebase si bloqueado, draft si no)
+  const getPred = (matchId) => {
+    const m = MATCHES.find(x => x.id === matchId);
+    if (!m || !current) return {};
+    if (isDateLocked(locked, current.id, m.date)) return predictions[current.id]?.[matchId] ?? {};
+    return draft[matchId] ?? {};
+  };
 
   const leaderboard = useMemo(() =>
     partList.map(p => ({ ...p, ...calcScore(predictions[p.id] ?? {}, real) }))
@@ -283,18 +305,24 @@ export default function WorldCupPolla() {
 
   // ── Sub-componentes ───────────────────────────────────────────────────────
 
-  const DateTabs = ({ value, onChange }) => (
+  const DateTabs = ({ value, onChange, showLock = false }) => (
     <div className="flex gap-1 overflow-x-auto">
-      {DATES.map(d => (
-        <button key={d.key} onClick={() => onChange(d.key)}
-          className={`flex-shrink-0 px-4 py-2 rounded-xl font-bold text-sm transition-all ${
-            value === d.key
-              ? 'bg-green-500 text-black shadow-md'
-              : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
-          }`}>
-          {d.short}
-        </button>
-      ))}
+      {DATES.map(d => {
+        const dl = showLock && current && isDateLocked(locked, current.id, d.key);
+        return (
+          <button key={d.key} onClick={() => onChange(d.key)}
+            className={`flex-shrink-0 px-3 py-2 rounded-xl font-bold text-sm transition-all flex items-center gap-1.5 ${
+              value === d.key
+                ? 'bg-green-500 text-black shadow-md'
+                : dl
+                  ? 'bg-white/8 text-gray-300 hover:bg-white/12'
+                  : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+            }`}>
+            {d.short}
+            {dl && <Lock size={10} className={value === d.key ? 'text-black/60' : 'text-green-400'}/>}
+          </button>
+        );
+      })}
     </div>
   );
 
@@ -303,7 +331,7 @@ export default function WorldCupPolla() {
       <div className="flex items-center gap-2 p-3">
         <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
           <span className="text-gray-200 text-xs font-semibold truncate hidden sm:block">{m.home}</span>
-          <FlagImg team={m.home} size={28} />
+          <FlagImg team={m.home} size={28}/>
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <input type="number" min="0" max="20" placeholder="0"
@@ -323,7 +351,7 @@ export default function WorldCupPolla() {
           />
         </div>
         <div className="flex-1 flex items-center gap-2 min-w-0">
-          <FlagImg team={m.away} size={28} />
+          <FlagImg team={m.away} size={28}/>
           <span className="text-gray-200 text-xs font-semibold truncate hidden sm:block">{m.away}</span>
         </div>
       </div>
@@ -407,9 +435,7 @@ export default function WorldCupPolla() {
               <Calendar size={11}/> Jornada Final Grupos · <strong className="text-white">25–27 Jun</strong>
             </span>
             <span className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs border ${
-              FB_READY && connected
-                ? 'bg-green-500/10 border-green-500/30 text-green-400'
-                : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
+              FB_READY && connected ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
             }`}>
               {FB_READY && connected ? <><Wifi size={11}/> En línea · compartido</> : <><WifiOff size={11}/> Modo local</>}
             </span>
@@ -457,24 +483,23 @@ export default function WorldCupPolla() {
               </p>
             </div>
 
-            {/* Calendario */}
             <div className={`${glass} p-5`}>
               <h3 className="text-green-400 font-bold mb-4 flex items-center gap-2">
                 <Calendar size={15}/> Partidos · 25–27 Jun 2026
               </h3>
-              <DateTabs value={activeDate} onChange={setActiveDate} />
+              <DateTabs value={activeDate} onChange={setActiveDate}/>
               <div className="mt-3">
                 {(() => {
                   const d = DATES.find(d => d.key === activeDate);
                   return (
                     <>
                       <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mb-3">{d?.phase}</p>
-                      {dateSlots(activeDate).map(time => (
+                      {slotsFor(activeDate).map(time => (
                         <div key={time} className="mb-3">
                           <div className="text-xs text-gray-600 font-semibold mb-1.5 flex items-center gap-1">
                             <Clock size={10}/> {time} COL/PER
                           </div>
-                          {dateMatches(activeDate).filter(m => m.time===time).map(m => (
+                          {fromDate(activeDate).filter(m => m.time===time).map(m => (
                             <div key={m.id} className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-2.5 mb-1">
                               <div className="flex items-center gap-2">
                                 <FlagImg team={m.home} size={22}/>
@@ -500,7 +525,6 @@ export default function WorldCupPolla() {
               </div>
             </div>
 
-            {/* Participantes */}
             {partList.length > 0 && (
               <div className={`${glass} p-5`}>
                 <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
@@ -510,7 +534,7 @@ export default function WorldCupPolla() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {partList.map(p => {
                     const { pts } = calcScore(predictions[p.id] ?? {}, real);
-                    const pLocked = Boolean(locked[p.id]);
+                    const savedDates = DATES.filter(d => isDateLocked(locked, p.id, d.key)).length;
                     return (
                       <button key={p.id}
                         onClick={() => { setCurrent(p); setTab('pronosticos'); }}
@@ -520,15 +544,14 @@ export default function WorldCupPolla() {
                         <div className="w-11 h-11 rounded-full flex items-center justify-center font-black text-sm text-black flex-shrink-0"
                           style={{ background:p.color }}>{p.initials}</div>
                         <div className="flex-1 min-w-0">
-                          <div className="font-bold text-white truncate flex items-center gap-1.5">
-                            {p.name} {pLocked && <Lock size={11} className="text-green-400 flex-shrink-0"/>}
-                          </div>
-                          <div className="text-xs text-gray-400">{pts} pts</div>
+                          <div className="font-bold text-white truncate">{p.name}</div>
+                          <div className="text-xs text-gray-400">{pts} pts · {savedDates}/3 días guardados</div>
                         </div>
-                        {pLocked
-                          ? <span className="text-green-400 text-xs font-bold px-2 py-1 bg-green-400/10 rounded-lg whitespace-nowrap">Guardado</span>
-                          : <span className="text-yellow-400 text-xs font-bold px-2 py-1 bg-yellow-400/10 rounded-lg whitespace-nowrap">Pendiente</span>
-                        }
+                        <div className="flex flex-col gap-0.5">
+                          {DATES.map(d => (
+                            <div key={d.key} className={`w-2 h-2 rounded-full ${isDateLocked(locked, p.id, d.key) ? 'bg-green-400' : 'bg-white/15'}`}/>
+                          ))}
+                        </div>
                       </button>
                     );
                   })}
@@ -566,168 +589,108 @@ export default function WorldCupPolla() {
               </div>
             ) : (
               <>
-                <div className="flex items-center justify-between flex-wrap gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm text-black"
-                      style={{ background:current.color }}>{current.initials}</div>
-                    <div>
-                      <div className="font-bold text-white">{current.name}</div>
-                      <div className="text-xs text-gray-400">Mis pronósticos · {filledCount}/{MATCHES.length} completados</div>
+                {/* Cabecera participante */}
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm text-black flex-shrink-0"
+                    style={{ background:current.color }}>{current.initials}</div>
+                  <div className="flex-1">
+                    <div className="font-bold text-white">{current.name}</div>
+                    <div className="flex gap-2 mt-1 flex-wrap">
+                      {DATES.map(d => {
+                        const dl = isDateLocked(locked, current.id, d.key);
+                        return (
+                          <span key={d.key} className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg font-semibold ${
+                            dl ? 'bg-green-500/15 text-green-400 border border-green-500/30' : 'bg-white/5 text-gray-500 border border-white/10'
+                          }`}>
+                            {dl ? <Lock size={9}/> : <Clock size={9}/>} {d.short}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
-                  {isLocked
-                    ? <div className="flex items-center gap-2 bg-green-500/15 border border-green-500/30 rounded-xl px-4 py-2">
-                        <ShieldCheck size={15} className="text-green-400"/>
-                        <div>
-                          <div className="text-green-400 font-bold text-sm">Bloqueados</div>
-                          <div className="text-green-400/60 text-xs">No se pueden modificar</div>
-                        </div>
-                      </div>
-                    : <div className="flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/30 rounded-xl px-4 py-2">
-                        <Clock size={14} className="text-yellow-400"/>
-                        <div>
-                          <div className="text-yellow-400 font-bold text-sm">Sin guardar</div>
-                          <div className="text-yellow-400/60 text-xs">Guarda antes de que empiece</div>
-                        </div>
-                      </div>
-                  }
                 </div>
 
-                <DateTabs value={activeDate} onChange={setActiveDate} />
+                {/* Tabs de fecha con indicador de bloqueo */}
+                <DateTabs value={activeDate} onChange={setActiveDate} showLock />
 
+                {/* Partidos del día activo */}
                 {(() => {
-                  const d = DATES.find(d => d.key === activeDate);
+                  const d        = DATES.find(d => d.key === activeDate);
+                  const dateLocked = isDateLocked(locked, current.id, activeDate);
+                  const filled   = filledForDate(dateLocked ? predictions[current.id] : draft, activeDate);
+                  const total    = fromDate(activeDate).length;
+
                   return (
-                    <div className={`${glass} p-4`}>
+                    <div className={`${glass} p-4`} style={dateLocked ? { border:'1px solid rgba(34,197,94,0.3)' } : {}}>
                       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                         <div>
-                          <div className="text-yellow-400 font-bold">{d?.label}</div>
+                          <div className="text-yellow-400 font-bold flex items-center gap-2">
+                            {d?.label}
+                            {dateLocked && <span className="inline-flex items-center gap-1 bg-green-500/15 text-green-400 text-xs px-2 py-0.5 rounded-lg border border-green-500/30"><Lock size={9}/> Bloqueado</span>}
+                          </div>
                           <div className="text-gray-500 text-xs">{d?.phase}</div>
                         </div>
-                        <div className="text-xs text-gray-500">
-                          {dateMatches(activeDate).filter(m => {
-                            const p = myPred[m.id];
-                            return p?.home != null && p?.home !== '' && p?.away != null && p?.away !== '';
-                          }).length}/{dateMatches(activeDate).length} en este día
+                        <div className="text-right">
+                          <div className="font-black text-lg" style={{ color: filled===total ? '#22c55e' : '#f59e0b' }}>
+                            {filled}/{total}
+                          </div>
+                          <div className="text-xs text-gray-500">completados</div>
                         </div>
                       </div>
+
                       <div className="space-y-3">
-                        {dateSlots(activeDate).map(time => (
+                        {slotsFor(activeDate).map(time => (
                           <div key={time}>
                             <div className="text-xs text-gray-600 font-semibold mb-2 flex items-center gap-1">
                               <Clock size={10}/> {time} COL/PER
                             </div>
                             <div className="space-y-2">
-                              {dateMatches(activeDate).filter(m => m.time===time).map(m => (
-                                <MatchRow key={m.id} m={m}
-                                  homeVal={myPred[m.id]?.home}
-                                  awayVal={myPred[m.id]?.away}
-                                  onHome={v => updateDraft(m.id,'home',v)}
-                                  onAway={v => updateDraft(m.id,'away',v)}
-                                  disabled={isLocked}
-                                />
-                              ))}
+                              {fromDate(activeDate).filter(m => m.time===time).map(m => {
+                                const p = getPred(m.id);
+                                return (
+                                  <MatchRow key={m.id} m={m}
+                                    homeVal={p?.home}
+                                    awayVal={p?.away}
+                                    onHome={v => updateDraft(m.id,'home',v)}
+                                    onAway={v => updateDraft(m.id,'away',v)}
+                                    disabled={dateLocked}
+                                  />
+                                );
+                              })}
                             </div>
                           </div>
                         ))}
                       </div>
+
+                      {/* Botón guardar (solo si el día NO está bloqueado) */}
+                      {!dateLocked && (
+                        <div className="mt-4 pt-4 border-t border-white/8">
+                          {filled < total && (
+                            <p className="text-yellow-400/70 text-xs mb-3 text-center">
+                              Faltan {total - filled} partido{total-filled!==1?'s':''} por pronosticar en este día
+                            </p>
+                          )}
+                          <button
+                            onClick={() => saveDatePredictions(activeDate)}
+                            disabled={filled === 0}
+                            className="w-full py-3.5 rounded-xl font-black text-base transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98] flex items-center justify-center gap-2"
+                            style={filled > 0
+                              ? { background:'linear-gradient(135deg,#22c55e,#16a34a)', color:'black' }
+                              : { background:'rgba(255,255,255,0.05)', color:'#6b7280' }}
+                          >
+                            <Lock size={17}/>
+                            {filled === total
+                              ? `Guardar y bloquear ${d?.short}`
+                              : `Guardar ${filled} pronóstico${filled!==1?'s':''} y bloquear ${d?.short}`}
+                          </button>
+                          <p className="text-center text-xs text-gray-600 mt-2">
+                            Solo se bloquea este día — los demás siguen editables
+                          </p>
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
-
-                {!isLocked && (
-                  <div className={`${glass} p-4`}>
-                    <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-                      <div>
-                        <p className="text-white font-bold">¿Listo para guardar?</p>
-                        <p className="text-gray-400 text-xs mt-0.5">
-                          Una vez guardados, <strong className="text-red-400">no podrás modificar</strong> tus pronósticos.
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-black text-xl" style={{ color: filledCount===MATCHES.length ? '#22c55e' : '#f59e0b' }}>
-                          {filledCount}/{MATCHES.length}
-                        </div>
-                        <div className="text-xs text-gray-500">completados</div>
-                      </div>
-                    </div>
-
-                    {filledCount < MATCHES.length && (
-                      <div className="mb-3 text-xs text-gray-500 bg-white/3 rounded-xl p-3">
-                        <p className="font-semibold text-yellow-400 mb-1">Partidos sin pronosticar:</p>
-                        <div className="grid grid-cols-3 gap-1">
-                          {DATES.map(d => {
-                            const missing = dateMatches(d.key).filter(m => {
-                              const p = draft[m.id];
-                              return !(p?.home != null && p?.home !== '' && p?.away != null && p?.away !== '');
-                            }).length;
-                            if (missing === 0) return null;
-                            return (
-                              <button key={d.key} onClick={() => setActiveDate(d.key)}
-                                className="text-center bg-white/5 rounded-lg py-1.5 hover:bg-white/10 transition-colors">
-                                <div className="text-yellow-400 font-black">{missing}</div>
-                                <div className="text-gray-500 text-xs">{d.short}</div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    <button
-                      onClick={savePredictions}
-                      disabled={filledCount === 0}
-                      className="w-full py-4 rounded-xl font-black text-base transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98] flex items-center justify-center gap-2"
-                      style={filledCount > 0
-                        ? { background:'linear-gradient(135deg,#22c55e,#16a34a)', color:'black' }
-                        : { background:'rgba(255,255,255,0.05)', color:'#6b7280' }}
-                    >
-                      <Lock size={18}/>
-                      {filledCount === MATCHES.length
-                        ? 'Guardar y bloquear pronósticos'
-                        : `Guardar ${filledCount} pronóstico${filledCount!==1?'s':''} y bloquear`}
-                    </button>
-                    {filledCount > 0 && filledCount < MATCHES.length && (
-                      <p className="text-center text-xs text-gray-500 mt-2">
-                        Los {MATCHES.length - filledCount} sin completar quedarán en 0 pts.
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {isLocked && (
-                  <div className={`${glass} p-4`}>
-                    <h3 className="text-green-400 font-bold text-sm mb-3 flex items-center gap-2">
-                      <ShieldCheck size={14}/> Todos mis pronósticos
-                    </h3>
-                    {DATES.map(d => (
-                      <div key={d.key} className="mb-4">
-                        <p className="text-xs text-gray-500 font-bold uppercase tracking-wider mb-2">{d.label} · {d.phase}</p>
-                        <div className="space-y-1.5">
-                          {dateMatches(d.key).map(m => {
-                            const p = myPred[m.id];
-                            const filled = p?.home != null && p?.home !== '' && p?.away != null && p?.away !== '';
-                            return (
-                              <div key={m.id} className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2">
-                                <div className="flex items-center gap-1.5">
-                                  <FlagImg team={m.home} size={18}/>
-                                  <span className="text-xs text-gray-300">{m.home}</span>
-                                </div>
-                                <span className="font-black text-sm mx-2" style={{ color: filled ? '#f59e0b' : '#374151' }}>
-                                  {filled ? `${p.home} – ${p.away}` : '–'}
-                                </span>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-xs text-gray-300">{m.away}</span>
-                                  <FlagImg team={m.away} size={18}/>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </>
             )}
           </>
@@ -744,28 +707,31 @@ export default function WorldCupPolla() {
                 ? <div className="text-center py-14 text-gray-500"><div className="text-5xl mb-3">📊</div><p>Nadie se ha unido todavía.</p></div>
                 : (
                 <div className="space-y-2">
-                  {leaderboard.map((p, idx) => (
-                    <div key={p.id} className={`flex items-center gap-3 p-4 rounded-xl border ${
-                      idx===0?'border-yellow-400/40 bg-yellow-400/8':idx===1?'border-gray-400/30 bg-gray-300/5':idx===2?'border-orange-700/30 bg-orange-800/5':'border-white/5 bg-white/2'
-                    }`}>
-                      <div className="w-9 text-center flex-shrink-0">
-                        {idx===0?<span className="text-2xl">🥇</span>:idx===1?<span className="text-2xl">🥈</span>:idx===2?<span className="text-2xl">🥉</span>:<span className="text-gray-500 font-bold">{idx+1}</span>}
-                      </div>
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm text-black flex-shrink-0"
-                        style={{ background:p.color }}>{p.initials}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-bold text-white truncate flex items-center gap-1.5">
-                          {p.name}
-                          {locked[p.id] ? <Lock size={11} className="text-green-400 flex-shrink-0"/> : <Clock size={11} className="text-yellow-400/50 flex-shrink-0"/>}
+                  {leaderboard.map((p, idx) => {
+                    const savedDates = DATES.filter(d => isDateLocked(locked, p.id, d.key)).length;
+                    return (
+                      <div key={p.id} className={`flex items-center gap-3 p-4 rounded-xl border ${
+                        idx===0?'border-yellow-400/40 bg-yellow-400/8':idx===1?'border-gray-400/30 bg-gray-300/5':idx===2?'border-orange-700/30 bg-orange-800/5':'border-white/5 bg-white/2'
+                      }`}>
+                        <div className="w-9 text-center flex-shrink-0">
+                          {idx===0?<span className="text-2xl">🥇</span>:idx===1?<span className="text-2xl">🥈</span>:idx===2?<span className="text-2xl">🥉</span>:<span className="text-gray-500 font-bold">{idx+1}</span>}
                         </div>
-                        <div className="text-xs text-gray-400 mt-0.5">
-                          <span className="text-green-400 font-bold">{p.exact}</span> exactos · <span className="text-blue-400 font-bold">{p.correct}</span> ganador
-                          <span className="text-gray-600"> · {countFilled(predictions[p.id]||{})}/{MATCHES.length}</span>
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm text-black flex-shrink-0"
+                          style={{ background:p.color }}>{p.initials}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-white truncate">{p.name}</div>
+                          <div className="text-xs text-gray-400 mt-0.5">
+                            <span className="text-green-400 font-bold">{p.exact}</span> exactos · <span className="text-blue-400 font-bold">{p.correct}</span> ganador
+                            <span className="text-gray-600"> · {savedDates}/3 días</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-black text-2xl" style={{ color:'#f59e0b' }}>{p.pts}</div>
+                          <div className="text-xs text-gray-500">pts</div>
                         </div>
                       </div>
-                      <div className="text-right"><div className="font-black text-2xl" style={{ color:'#f59e0b' }}>{p.pts}</div><div className="text-xs text-gray-500">pts</div></div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -774,7 +740,7 @@ export default function WorldCupPolla() {
               <div className={`${glass} p-4`}>
                 <h3 className="text-green-400 font-bold mb-4">Resultados Reales</h3>
                 {DATES.map(d => {
-                  const played = dateMatches(d.key).filter(m => real[m.id]?.home != null && real[m.id]?.home !== '');
+                  const played = fromDate(d.key).filter(m => real[m.id]?.home != null && real[m.id]?.home !== '');
                   if (!played.length) return null;
                   return (
                     <div key={d.key} className="mb-4">
@@ -782,15 +748,9 @@ export default function WorldCupPolla() {
                       <div className="space-y-2">
                         {played.map(m => (
                           <div key={m.id} className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-2.5">
-                            <div className="flex items-center gap-2">
-                              <FlagImg team={m.home} size={20}/>
-                              <span className="text-sm font-semibold">{m.home}</span>
-                            </div>
+                            <div className="flex items-center gap-2"><FlagImg team={m.home} size={20}/><span className="text-sm font-semibold">{m.home}</span></div>
                             <span className="font-black text-xl text-white px-3">{real[m.id].home} – {real[m.id].away}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold">{m.away}</span>
-                              <FlagImg team={m.away} size={20}/>
-                            </div>
+                            <div className="flex items-center gap-2"><span className="text-sm font-semibold">{m.away}</span><FlagImg team={m.away} size={20}/></div>
                           </div>
                         ))}
                       </div>
@@ -802,8 +762,10 @@ export default function WorldCupPolla() {
 
             {partList.length > 0 && (
               <div className={`${glass} p-4`}>
-                <h3 className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-3">Comparativa · {DATES.find(d=>d.key===activeDate)?.label}</h3>
-                <DateTabs value={activeDate} onChange={setActiveDate} />
+                <h3 className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-3">
+                  Comparativa · {DATES.find(d=>d.key===activeDate)?.label}
+                </h3>
+                <DateTabs value={activeDate} onChange={setActiveDate}/>
                 <div className="overflow-x-auto mt-3">
                   <table className="w-full text-xs">
                     <thead>
@@ -814,14 +776,13 @@ export default function WorldCupPolla() {
                           <th key={p.id} className="text-center pb-2 px-2">
                             <div className="flex flex-col items-center gap-0.5">
                               <span className="w-5 h-5 rounded-full inline-flex items-center justify-center font-black text-black text-xs" style={{ background:p.color }}>{p.initials}</span>
-                              {locked[p.id] ? <Lock size={8} className="text-green-400"/> : <Clock size={8} className="text-yellow-400/50"/>}
                             </div>
                           </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {dateMatches(activeDate).map(m => {
+                      {fromDate(activeDate).map(m => {
                         const r = real[m.id];
                         const hasR = r?.home != null && r?.home !== '';
                         return (
@@ -836,6 +797,7 @@ export default function WorldCupPolla() {
                             {partList.map(p => {
                               const pred = predictions[p.id]?.[m.id];
                               const ok = pred?.home != null && pred?.home !== '' && pred?.away != null && pred?.away !== '';
+                              const dateLk = isDateLocked(locked, p.id, m.date);
                               let badge = '';
                               if (hasR && ok) {
                                 const rr = getResult(r.home, r.away), pr = getResult(pred.home, pred.away);
@@ -847,7 +809,7 @@ export default function WorldCupPolla() {
                                 <td key={p.id} className="py-2 px-2 text-center">
                                   {ok
                                     ? <span className="text-gray-200">{pred.home}-{pred.away}{badge?` ${badge}`:''}</span>
-                                    : locked[p.id]
+                                    : dateLk
                                       ? <span className="text-gray-600">–</span>
                                       : <span className="text-yellow-400/40">pend.</span>
                                   }
@@ -872,15 +834,15 @@ export default function WorldCupPolla() {
             <div className={`${glass} p-5`} style={{ border:'1px solid rgba(245,158,11,0.4)' }}>
               <h2 className="text-xl font-bold text-yellow-400 mb-1 flex items-center gap-2"><Settings size={20}/> Panel del Juez</h2>
               <p className="text-gray-400 text-sm mb-4">Ingresa los resultados reales. Los puntos se recalculan al instante.</p>
-              <DateTabs value={activeDate} onChange={setActiveDate} />
+              <DateTabs value={activeDate} onChange={setActiveDate}/>
               <div className="mt-4 space-y-3">
-                {dateSlots(activeDate).map(time => (
+                {slotsFor(activeDate).map(time => (
                   <div key={time}>
                     <div className="text-yellow-400/60 text-xs font-bold mb-2 flex items-center gap-1 uppercase tracking-wider">
                       <Clock size={10}/> {time} COL/PER
                     </div>
                     <div className="space-y-2">
-                      {dateMatches(activeDate).filter(m => m.time===time).map(m => (
+                      {fromDate(activeDate).filter(m => m.time===time).map(m => (
                         <MatchRow key={m.id} m={m} gold
                           homeVal={real[m.id]?.home}
                           awayVal={real[m.id]?.away}
