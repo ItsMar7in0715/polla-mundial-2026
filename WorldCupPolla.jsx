@@ -50,7 +50,7 @@ const FlagImg = ({ team, size = 28 }) => {
   if (!code) return <span className="text-gray-500 text-xs">{team?.[0]}</span>;
   return (
     <img
-      src={`https://flagcdn.com/w${size * 2}/${code}.png`}
+      src={`${import.meta.env.BASE_URL}flags/${code}.svg`}
       alt={team}
       width={size}
       height={Math.round(size * 0.67)}
