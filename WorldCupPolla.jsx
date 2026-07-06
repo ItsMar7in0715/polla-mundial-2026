@@ -62,6 +62,14 @@ const FLAG = {
   'Suiza':         'ch',
 };
 
+// Abreviatura corta para el bracket (código de bandera en mayúsculas)
+const teamAbbr = (team) => {
+  const code = FLAG[team];
+  if (!code) return team ? team.slice(0, 3).toUpperCase() : '?';
+  const c = code.includes('-') ? code.split('-')[1] : code;
+  return c.toUpperCase();
+};
+
 const FlagImg = ({ team, size = 28 }) => {
   const code = FLAG[team];
   if (!code) return <span className="text-gray-500 text-xs">{team?.[0]}</span>;
@@ -107,14 +115,6 @@ const BRACKET_MATCHES = [
   // Final y 3er Lugar · 18-19 Jul
   { id:'FIN', date:'19/07', round:'Final',     time:'18:00', venue:'MetLife, NJ', home:{src:'S01',side:'winner'}, away:{src:'S02',side:'winner'} },
   { id:'BRO', date:'18/07', round:'3er Lugar', time:'18:00', venue:'TBD',         home:{src:'S01',side:'loser'},  away:{src:'S02',side:'loser'}  },
-];
-
-const BRACKET_ROUNDS = [
-  { key:'16avos',  label:'16avos de Final', ids: ['R01','R02','R03','R04','R05','R06','R07','R08','R09','R10','R11','R12','R13','R14','R15','R16'] },
-  { key:'Octavos', label:'Octavos de Final', ids: ['Q01','Q02','Q03','Q04','Q05','Q06','Q07','Q08'] },
-  { key:'Cuartos', label:'Cuartos de Final', ids: ['C01','C02','C03','C04'] },
-  { key:'Semis',   label:'Semifinales',      ids: ['S01','S02'] },
-  { key:'Final',   label:'Final',            ids: ['FIN','BRO'] },
 ];
 
 // Resuelve el nombre del equipo que avanzó (o perdió) en un partido dado
@@ -277,9 +277,6 @@ export default function WorldCupPolla() {
   const [activeDate,   setActiveDate]   = useState('03/07');
   const [adminMode,    setAdminMode]    = useState(false);
   const [adminSection, setAdminSection] = useState('results'); // 'results' | 'days' | 'users'
-  const [bracketRound, setBracketRound] = useState('16avos');
-  const [adminResultsView, setAdminResultsView] = useState('grupos'); // 'grupos' | 'llave'
-  const [adminLlaveRound,  setAdminLlaveRound]  = useState('Octavos');
   const [adminEditPid,      setAdminEditPid]      = useState('');
   const [adminDraft,        setAdminDraft]        = useState({});
   const [confirmDeletePid,  setConfirmDeletePid]  = useState('');
@@ -468,12 +465,12 @@ export default function WorldCupPolla() {
     const now = !isDayLocked(date);
     if (FB_READY) await set(ref(db, `${DB_PATH}/dayLocked/${dk}`), now || null);
     else setDayLocked(prev => { const n={...prev}; if(now) n[dk]=true; else delete n[dk]; return n; });
-    showToast(now ? `🔒 ${DATES.find(d=>d.key===date)?.label} bloqueado para todos` : `🔓 ${DATES.find(d=>d.key===date)?.label} desbloqueado`);
+    showToast(now ? `🔒 ${ALL_PRED_DATES.find(d=>d.key===date)?.label} bloqueado para todos` : `🔓 ${ALL_PRED_DATES.find(d=>d.key===date)?.label} desbloqueado`);
   };
 
   const toggleMatchLockAdmin = async (matchId) => {
     const now = !mLocked[matchId];
-    const m = MATCHES.find(x => x.id === matchId);
+    const m = MATCHES.find(x => x.id === matchId) ?? resolvedBracketMatches.find(x => x.id === matchId);
     if (FB_READY) await set(ref(db, `${DB_PATH}/matchLocked/${matchId}`), now || null);
     else setMlocked(prev => { const n={...prev}; if(now) n[matchId]=true; else delete n[matchId]; return n; });
     showToast(now ? `🔒 ${m?.home} vs ${m?.away} bloqueado` : `🔓 ${m?.home} vs ${m?.away} desbloqueado`);
@@ -482,7 +479,7 @@ export default function WorldCupPolla() {
   // Desbloquea todos los partidos de un día para un participante específico
   const adminUnlockUserDay = async (pid, date) => {
     if (FB_READY) {
-      for (const m of fromDate(date)) {
+      for (const m of getMatchesForDate(date)) {
         await set(ref(db, `${DB_PATH}/locked/${pid}/${m.id}`), null);
       }
       // Limpiar también el formato legado de día si existe
@@ -490,12 +487,12 @@ export default function WorldCupPolla() {
     } else {
       setLocked(prev => {
         const next = { ...prev, [pid]: { ...(prev[pid] ?? {}) } };
-        fromDate(date).forEach(m => { delete next[pid][m.id]; });
+        getMatchesForDate(date).forEach(m => { delete next[pid][m.id]; });
         delete next[pid][toFbKey(date)];
         return next;
       });
     }
-    showToast(`🔓 ${participants[pid]?.name} desbloqueado para ${DATES.find(d=>d.key===date)?.label}`);
+    showToast(`🔓 ${participants[pid]?.name} desbloqueado para ${ALL_PRED_DATES.find(d=>d.key===date)?.label}`);
   };
 
   const loadAdminUser = (pid) => {
@@ -528,7 +525,7 @@ export default function WorldCupPolla() {
   const saveAdminUserPreds = async (date) => {
     if (!adminEditPid) return;
     const merged = { ...(predictions[adminEditPid] ?? {}) };
-    fromDate(date).forEach(m => { if (adminDraft[m.id]) merged[m.id] = adminDraft[m.id]; });
+    getMatchesForDate(date).forEach(m => { if (adminDraft[m.id]) merged[m.id] = adminDraft[m.id]; });
     if (FB_READY) await set(ref(db, `${DB_PATH}/predictions/${adminEditPid}`), merged);
     else setPredictions(prev => ({ ...prev, [adminEditPid]: merged }));
     showToast(`Pronósticos de ${participants[adminEditPid]?.name} actualizados ✓`);
@@ -559,6 +556,12 @@ export default function WorldCupPolla() {
     return resolvedBracketMatches.filter(m => m.date === date);
   };
 
+  // Como isDateFullyLocked pero soporta también fechas de la llave eliminatoria
+  const isDateFullyLockedFor = (pid, date) => {
+    const dm = getMatchesForDate(date);
+    return dm.length > 0 && dm.every(m => isMatchLocked(locked, pid, m.id));
+  };
+
   const partList = useMemo(() => Object.values(participants).sort((a,b) => Number(a.id)-Number(b.id)), [participants]);
 
   const leaderboard = useMemo(() =>
@@ -567,7 +570,7 @@ export default function WorldCupPolla() {
     [partList, predictions, real]
   );
 
-  const hasRealResults = MATCHES.some(m => real[m.id]?.home != null && real[m.id]?.home !== '');
+  const hasRealResults = [...MATCHES, ...BRACKET_MATCHES].some(m => real[m.id]?.home != null && real[m.id]?.home !== '');
 
   const navTabs = [
     { id:'inicio',      label:'Inicio',      emoji:'🏠' },
@@ -962,89 +965,95 @@ export default function WorldCupPolla() {
         )}
 
         {/* ════════ LLAVE ════════ */}
-        {tab==='llave' && (
-          <>
-            {/* Selector de ronda */}
-            <div className="flex gap-1 overflow-x-auto pb-1">
-              {BRACKET_ROUNDS.map(r => (
-                <button key={r.key} onClick={() => setBracketRound(r.key)}
-                  className={`flex-shrink-0 px-3 py-2 rounded-xl font-bold text-xs transition-all ${
-                    bracketRound===r.key ? 'bg-yellow-400 text-black' : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
-                  }`}>{r.label}</button>
-              ))}
+        {tab==='llave' && (() => {
+          // Deriva las columnas del bracket recursivamente desde la final
+          const srcs = (id) => {
+            const bm = BRACKET_MATCHES.find(x => x.id === id);
+            return bm ? [bm.home.src, bm.away.src] : [];
+          };
+          const semiL = ['S01'], quartL = srcs('S01'), octL = quartL.flatMap(srcs), r16L = octL.flatMap(srcs);
+          const semiR = ['S02'], quartR = srcs('S02'), octR = quartR.flatMap(srcs), r16R = octR.flatMap(srcs);
+          const leftCols = [
+            { label:'16avos',  ids:r16L },
+            { label:'Octavos', ids:octL },
+            { label:'Cuartos', ids:quartL },
+            { label:'Semis',   ids:semiL },
+          ];
+          const rightCols = [
+            { label:'Semis',   ids:semiR },
+            { label:'Cuartos', ids:quartR },
+            { label:'Octavos', ids:octR },
+            { label:'16avos',  ids:r16R },
+          ];
+          const champion = resolveTeam('FIN', 'winner', real);
+
+          const Cell = ({ mid }) => {
+            const sm = MATCHES.find(x => x.id === mid);
+            const bm = BRACKET_MATCHES.find(x => x.id === mid);
+            const m = sm ?? bm;
+            if (!m) return null;
+            const home = sm ? sm.home : resolveTeam(bm.home.src, bm.home.side, real);
+            const away = sm ? sm.away : resolveTeam(bm.away.src, bm.away.side, real);
+            const r = real[mid];
+            const hasR = r?.home != null && r?.home !== '' && r?.away != null && r?.away !== '';
+            const winner = hasR ? getMatchWinner(mid, home, away, real) : null;
+            const isPens = hasR && r?.winner && parseInt(r.home) === parseInt(r.away);
+            const row = (team, score) => (
+              <div className={`flex items-center gap-1.5 min-w-0 ${winner && winner !== team ? 'opacity-40' : ''}`}>
+                {team ? <FlagImg team={team} size={16}/> : <span className="w-4 h-3 rounded-sm bg-white/10 inline-block flex-shrink-0"/>}
+                <span className={`text-[11px] font-bold truncate ${winner === team ? 'text-white' : winner ? 'text-gray-500 line-through' : 'text-gray-300'}`}>
+                  {team ? teamAbbr(team) : 'TBD'}
+                </span>
+                <span className={`ml-auto text-xs font-black ${winner === team ? 'text-white' : 'text-gray-500'}`}>{hasR ? score : ''}</span>
+              </div>
+            );
+            return (
+              <div className={`rounded-lg border px-2 py-1.5 ${hasR ? 'bg-white/5 border-white/10' : 'bg-white/2 border-white/5'}`}>
+                {row(home, r?.home)}
+                {row(away, r?.away)}
+                <div className="text-[9px] text-gray-600 text-center mt-0.5 leading-none">{m.date}{isPens ? ' · pen.' : ''}</div>
+              </div>
+            );
+          };
+
+          const Col = ({ col, side }) => (
+            <div className="flex flex-col w-[118px] flex-shrink-0">
+              <div className="text-[9px] text-gray-500 font-bold uppercase tracking-wider text-center mb-2">{col.label}</div>
+              <div className="flex-1 flex flex-col justify-around gap-1.5">
+                {col.ids.map(id => <Cell key={side+id} mid={id}/>)}
+              </div>
             </div>
+          );
 
-            {(() => {
-              const round = BRACKET_ROUNDS.find(r => r.key === bracketRound);
-              const matchIds = round?.ids ?? [];
+          return (
+            <div className={`${glass} p-4`} style={{ border:'1px solid rgba(245,158,11,0.25)' }}>
+              <h3 className="text-yellow-400 font-bold mb-1 flex items-center gap-2">🏆 Llave del Torneo</h3>
+              <p className="text-gray-500 text-xs mb-3">Desliza horizontalmente para ver toda la llave →</p>
+              <div className="overflow-x-auto pb-2">
+                <div className="flex gap-2 items-stretch" style={{ minWidth:1180 }}>
+                  {leftCols.map(c => <Col key={'L'+c.label} col={c} side="L"/>)}
 
-              return (
-                <div className={`${glass} p-4`} style={{ border:'1px solid rgba(245,158,11,0.25)' }}>
-                  <h3 className="text-yellow-400 font-bold mb-4 flex items-center gap-2">
-                    🏆 {round?.label}
-                  </h3>
-                  <div className="space-y-3">
-                    {matchIds.map(mid => {
-                      // Resolver equipos: R01-R16 vienen de MATCHES, el resto de BRACKET_MATCHES
-                      const staticM = MATCHES.find(x => x.id === mid);
-                      const bracketM = BRACKET_MATCHES.find(x => x.id === mid);
-                      const m = staticM ?? bracketM;
-                      if (!m) return null;
-
-                      const homeTeam = staticM ? staticM.home : resolveTeam(bracketM.home.src, bracketM.home.side, real);
-                      const awayTeam = staticM ? staticM.away : resolveTeam(bracketM.away.src, bracketM.away.side, real);
-                      const r = real[mid];
-                      const hasResult = r?.home != null && r?.home !== '' && r?.away != null && r?.away !== '';
-
-                      const winner = hasResult ? getMatchWinner(mid, homeTeam, awayTeam, real) : null;
-                      const isPens = hasResult && r.winner && parseInt(r.home) === parseInt(r.away);
-
-                      return (
-                        <div key={mid} className={`rounded-xl border p-3 transition-colors ${
-                          hasResult ? 'bg-white/5 border-white/10' : 'bg-white/2 border-white/5'
-                        }`}>
-                          <div className="flex items-center gap-2">
-                            {/* Equipo local */}
-                            <div className={`flex-1 flex items-center justify-end gap-2 min-w-0 ${winner && winner===homeTeam ? 'opacity-100' : winner ? 'opacity-40' : ''}`}>
-                              <span className="text-xs font-semibold text-gray-200 truncate hidden sm:block">{homeTeam ?? '?'}</span>
-                              {homeTeam ? <FlagImg team={homeTeam} size={26}/> : <span className="w-7 h-5 rounded bg-white/10 inline-block"/>}
-                            </div>
-
-                            {/* Marcador */}
-                            <div className="flex items-center gap-1 flex-shrink-0">
-                              {hasResult ? (
-                                <div className="flex items-center gap-1 px-2">
-                                  <span className={`font-black text-lg w-6 text-center ${winner===homeTeam ? 'text-white' : 'text-gray-500'}`}>{r.home}</span>
-                                  <span className="text-gray-600 font-bold">-</span>
-                                  <span className={`font-black text-lg w-6 text-center ${winner===awayTeam ? 'text-white' : 'text-gray-500'}`}>{r.away}</span>
-                                </div>
-                              ) : (
-                                <div className="px-3 py-1 rounded-lg bg-white/5 text-gray-600 text-xs font-bold">{m.time}</div>
-                              )}
-                            </div>
-
-                            {/* Equipo visitante */}
-                            <div className={`flex-1 flex items-center gap-2 min-w-0 ${winner && winner===awayTeam ? 'opacity-100' : winner ? 'opacity-40' : ''}`}>
-                              {awayTeam ? <FlagImg team={awayTeam} size={26}/> : <span className="w-7 h-5 rounded bg-white/10 inline-block"/>}
-                              <span className="text-xs font-semibold text-gray-200 truncate hidden sm:block">{awayTeam ?? '?'}</span>
-                            </div>
-                          </div>
-
-                          {/* Pie del partido */}
-                          <div className="flex items-center justify-center gap-2 mt-1.5 text-xs text-gray-600">
-                            <MapPin size={9}/> {m.venue}
-                            {isPens && <span className="text-yellow-500 font-bold ml-1">· Penales</span>}
-                            {winner && <span className="text-green-400 font-semibold ml-1">· Avanzó: {winner}</span>}
-                          </div>
+                  {/* Centro: campeón, final y 3er lugar */}
+                  <div className="flex flex-col items-center justify-center gap-2 w-[128px] flex-shrink-0 px-1">
+                    <div className="text-4xl" style={{ filter: champion ? 'drop-shadow(0 0 18px #f59e0b)' : 'grayscale(1) opacity(0.4)' }}>🏆</div>
+                    {champion
+                      ? <div className="flex flex-col items-center gap-1">
+                          <FlagImg team={champion} size={30}/>
+                          <span className="text-yellow-400 font-black text-sm text-center">{champion}</span>
                         </div>
-                      );
-                    })}
+                      : <span className="text-gray-600 text-[10px] font-bold uppercase tracking-wider">Campeón</span>}
+                    <div className="text-[9px] text-yellow-400 font-bold uppercase mt-2">Final · 19 Jul</div>
+                    <div className="w-full"><Cell mid="FIN"/></div>
+                    <div className="text-[9px] text-blue-400 font-bold uppercase mt-2">3er Lugar · 18 Jul</div>
+                    <div className="w-full"><Cell mid="BRO"/></div>
                   </div>
+
+                  {rightCols.map(c => <Col key={'R'+c.label} col={c} side="R"/>)}
                 </div>
-              );
-            })()}
-          </>
-        )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ════════ TABLA ════════ */}
         {tab==='tabla' && (
@@ -1145,8 +1154,8 @@ export default function WorldCupPolla() {
 
             {partList.length > 0 && (
               <div className={`${glass} p-4`}>
-                <h3 className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-3">Comparativa · {DATES.find(d=>d.key===activeDate)?.label}</h3>
-                <DateTabs value={activeDate} onChange={setActiveDate}/>
+                <h3 className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-3">Comparativa · {ALL_PRED_DATES.find(d=>d.key===activeDate)?.label}</h3>
+                <DateTabs value={activeDate} onChange={setActiveDate} dates={ALL_PRED_DATES}/>
                 <div className="overflow-x-auto mt-3">
                   <table className="w-full text-xs">
                     <thead>
@@ -1161,7 +1170,7 @@ export default function WorldCupPolla() {
                       </tr>
                     </thead>
                     <tbody>
-                      {fromDate(activeDate).map(m => {
+                      {getMatchesForDate(activeDate).map(m => {
                         const r = real[m.id]; const hasR = r?.home != null && r?.home !== '';
                         return (
                           <tr key={m.id} className="border-t border-white/5">
@@ -1239,11 +1248,12 @@ export default function WorldCupPolla() {
                         <div className="text-yellow-400/60 text-xs font-bold mb-2 flex items-center gap-1 uppercase tracking-wider"><Clock size={10}/> {time} COL/PER</div>
                         <div className="space-y-2">
                           {dayMatches.filter(m => m.time === time).map(m => {
-                            const isBracket = BRACKET_MATCHES.some(bm => bm.id === m.id);
+                            // Todo partido de eliminación directa (16avos en adelante) permite elegir ganador en empate
+                            const isKnockout = Boolean(m.round);
                             const r = real[m.id] ?? {};
                             const h = parseInt(r.home), a = parseInt(r.away);
                             const tied = !isNaN(h) && !isNaN(a) && h === a && r.home !== '' && r.away !== '';
-                            if (!isBracket) {
+                            if (!isKnockout) {
                               return (
                                 <MatchRow key={m.id} m={m} gold
                                   homeVal={r.home} awayVal={r.away}
@@ -1306,9 +1316,9 @@ export default function WorldCupPolla() {
             {adminSection==='days' && (
               <div className={`${glass} p-5`} style={{ border:'1px solid rgba(245,158,11,0.4)' }}>
                 <h2 className="text-xl font-bold text-yellow-400 mb-1 flex items-center gap-2"><Lock size={20}/> Control de Partidos</h2>
-                <p className="text-gray-400 text-sm mb-5">Bloquea o desbloquea días completos o partidos individuales.</p>
+                <p className="text-gray-400 text-sm mb-5">Bloquea o desbloquea días completos o partidos individuales, incluida la fase eliminatoria.</p>
                 <div className="space-y-4">
-                  {DATES.map(d => {
+                  {ALL_PRED_DATES.map(d => {
                     const dl = isDayLocked(d.key);
                     return (
                       <div key={d.key} className={`rounded-xl border overflow-hidden ${dl ? 'border-red-500/30' : 'border-white/10'}`}>
@@ -1329,7 +1339,7 @@ export default function WorldCupPolla() {
                         </div>
                         {/* Filas de partidos */}
                         <div className="divide-y divide-white/5">
-                          {fromDate(d.key).map(m => {
+                          {getMatchesForDate(d.key).map(m => {
                             const ml = isAdminMatchLocked(m.id);
                             return (
                               <div key={m.id} className={`flex items-center justify-between px-3 py-2 ${ml ? 'bg-orange-500/5' : ''}`}>
@@ -1412,21 +1422,21 @@ export default function WorldCupPolla() {
                               Editando: <span className="text-white">{participants[adminEditPid]?.name}</span>
                             </p>
                             {/* Botón desbloquear día para este usuario */}
-                            {isDateFullyLocked(locked, adminEditPid, activeDate) && (
+                            {isDateFullyLockedFor(adminEditPid, activeDate) && (
                               <button
                                 onClick={() => adminUnlockUserDay(adminEditPid, activeDate)}
                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25 transition-all"
                               >
-                                <Unlock size={12}/> Desbloquear {DATES.find(d=>d.key===activeDate)?.short}
+                                <Unlock size={12}/> Desbloquear {ALL_PRED_DATES.find(d=>d.key===activeDate)?.short}
                               </button>
                             )}
                           </div>
-                          <DateTabs value={activeDate} onChange={setActiveDate}/>
+                          <DateTabs value={activeDate} onChange={setActiveDate} dates={ALL_PRED_DATES}/>
                           {/* Indicador de estado por día */}
-                          <div className="flex gap-2 mt-2">
-                            {DATES.map(d => {
-                              const fullyLocked = isDateFullyLocked(locked, adminEditPid, d.key);
-                              const partial = !fullyLocked && fromDate(d.key).some(m => isMatchLocked(locked, adminEditPid, m.id));
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {ALL_PRED_DATES.map(d => {
+                              const fullyLocked = isDateFullyLockedFor(adminEditPid, d.key);
+                              const partial = !fullyLocked && getMatchesForDate(d.key).some(m => isMatchLocked(locked, adminEditPid, m.id));
                               return (
                                 <span key={d.key} className={`text-xs px-2 py-0.5 rounded-lg font-semibold flex items-center gap-1 ${
                                   fullyLocked ? 'bg-green-500/15 text-green-400 border border-green-500/25' :
@@ -1441,11 +1451,11 @@ export default function WorldCupPolla() {
                           </div>
                         </div>
                         <div className="space-y-3">
-                          {slotsFor(activeDate).map(time => (
+                          {[...new Set(getMatchesForDate(activeDate).map(m => m.time))].sort().map(time => (
                             <div key={time}>
                               <div className="text-yellow-400/60 text-xs font-bold mb-2 flex items-center gap-1 uppercase tracking-wider"><Clock size={10}/> {time} COL/PER</div>
                               <div className="space-y-2">
-                                {fromDate(activeDate).filter(m => m.time===time).map(m => (
+                                {getMatchesForDate(activeDate).filter(m => m.time===time).map(m => (
                                   <MatchRow key={m.id} m={m} gold
                                     homeVal={adminDraft[m.id]?.home}
                                     awayVal={adminDraft[m.id]?.away}
@@ -1461,7 +1471,7 @@ export default function WorldCupPolla() {
                         <button onClick={() => saveAdminUserPreds(activeDate)}
                           className="mt-4 w-full py-3 rounded-xl font-black text-black flex items-center justify-center gap-2 hover:opacity-90 active:scale-[0.98] transition-all"
                           style={{ background:'linear-gradient(135deg,#f59e0b,#d97706)' }}>
-                          <CheckCircle size={16}/> Guardar cambios de {DATES.find(d=>d.key===activeDate)?.short}
+                          <CheckCircle size={16}/> Guardar cambios de {ALL_PRED_DATES.find(d=>d.key===activeDate)?.short}
                         </button>
                       </>
                     )}
