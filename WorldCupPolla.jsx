@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Users, Plus, BarChart3, Settings, Lock, CheckCircle, Clock, MapPin, Wifi, WifiOff, ShieldCheck, Calendar, Unlock, Edit3 } from 'lucide-react';
+import { Users, Plus, BarChart3, Settings, Lock, CheckCircle, Clock, MapPin, Wifi, WifiOff, ShieldCheck, Calendar, Unlock, Edit3, Trash2 } from 'lucide-react';
 import { db, FB_READY } from './src/firebase.js';
 import { ref, onValue, set } from 'firebase/database';
 
@@ -24,6 +24,23 @@ const MATCHES = [
   { id:'K2', date:'27/06', group:'K', home:'RD Congo',      away:'Uzbekistán',       time:'18:30', venue:'Atlanta'       },
   { id:'J1', date:'27/06', group:'J', home:'Argelia',       away:'Austria',          time:'21:00', venue:'Kansas City'   },
   { id:'J2', date:'27/06', group:'J', home:'Jordania',      away:'Argentina',        time:'21:00', venue:'Dallas'        },
+  // ── 16avos de Final · 28 Jun – 3 Jul 2026 ────────────────────────────────
+  { id:'R01', date:'28/06', round:'16avos', home:'Sudáfrica',            away:'Canadá',               time:'14:00', venue:'SoFi Stadium, L.A.'   },
+  { id:'R02', date:'29/06', round:'16avos', home:'Brasil',               away:'Japón',                time:'12:00', venue:'NRG Stadium, Houston'  },
+  { id:'R03', date:'29/06', round:'16avos', home:'Alemania',             away:'Paraguay',             time:'15:30', venue:'Gillette Stadium, Boston'},
+  { id:'R04', date:'29/06', round:'16avos', home:'Países Bajos',         away:'Marruecos',            time:'20:00', venue:'Est. BBVA, Monterrey'  },
+  { id:'R05', date:'30/06', round:'16avos', home:'Costa de Marfil',      away:'Noruega',              time:'12:00', venue:'Cotton Bowl, Dallas'   },
+  { id:'R06', date:'30/06', round:'16avos', home:'Francia',              away:'Suecia',               time:'16:00', venue:'MetLife, Nueva Jersey' },
+  { id:'R07', date:'30/06', round:'16avos', home:'México',               away:'Ecuador',              time:'20:00', venue:'Est. Azteca, México'   },
+  { id:'R08', date:'01/07', round:'16avos', home:'Inglaterra',           away:'RD Congo',             time:'11:00', venue:'Mercedes-Benz, Atlanta'},
+  { id:'R09', date:'01/07', round:'16avos', home:'Bélgica',              away:'Senegal',              time:'15:00', venue:'Lumen Field, Seattle'  },
+  { id:'R10', date:'01/07', round:'16avos', home:'Estados Unidos',       away:'Bosnia y Herzegovina', time:'19:00', venue:'Levi\'s Stadium, S.J.' },
+  { id:'R11', date:'02/07', round:'16avos', home:'España',               away:'Austria',              time:'14:00', venue:'SoFi Stadium, L.A.'   },
+  { id:'R12', date:'02/07', round:'16avos', home:'Portugal',             away:'Croacia',              time:'18:00', venue:'BMO Field, Toronto'    },
+  { id:'R13', date:'02/07', round:'16avos', home:'Suiza',                away:'Argelia',              time:'22:00', venue:'BC Place, Vancouver'   },
+  { id:'R14', date:'03/07', round:'16avos', home:'Australia',            away:'Egipto',               time:'13:00', venue:'AT&T Stadium, Dallas'  },
+  { id:'R15', date:'03/07', round:'16avos', home:'Argentina',            away:'Cabo Verde',           time:'17:00', venue:'Hard Rock, Miami'      },
+  { id:'R16', date:'03/07', round:'16avos', home:'Colombia',             away:'Ghana',                time:'20:30', venue:'Arrowhead, Kansas City'},
 ];
 
 const FLAG = {
@@ -39,6 +56,10 @@ const FLAG = {
   'Inglaterra':  'gb-eng','Colombia':       'co', 'Portugal':      'pt',
   'RD Congo':      'cd', 'Uzbekistán':      'uz', 'Argelia':       'dz',
   'Austria':       'at', 'Jordania':        'jo', 'Argentina':     'ar',
+  // 16avos de final
+  'Canadá':        'ca', 'Sudáfrica':       'za', 'Brasil':        'br',
+  'Marruecos':     'ma', 'México':          'mx', 'Bosnia y Herzegovina':'ba',
+  'Suiza':         'ch',
 };
 
 const FlagImg = ({ team, size = 28 }) => {
@@ -52,16 +73,131 @@ const FlagImg = ({ team, size = 28 }) => {
 };
 
 const DATES = [
-  { key:'25/06', short:'Jue 25', label:'Jueves 25 Jun',  phase:'Grupos D · E · F' },
-  { key:'26/06', short:'Vie 26', label:'Viernes 26 Jun', phase:'Grupos G · H · I' },
-  { key:'27/06', short:'Sáb 27', label:'Sábado 27 Jun',  phase:'Grupos J · K · L' },
+  { key:'25/06', short:'Jue 25', label:'Jueves 25 Jun',     phase:'Grupos D · E · F' },
+  { key:'26/06', short:'Vie 26', label:'Viernes 26 Jun',    phase:'Grupos G · H · I' },
+  { key:'27/06', short:'Sáb 27', label:'Sábado 27 Jun',     phase:'Grupos J · K · L' },
+  { key:'28/06', short:'Sáb 28', label:'Sábado 28 Jun',     phase:'16avos de Final'  },
+  { key:'29/06', short:'Dom 29', label:'Domingo 29 Jun',    phase:'16avos de Final'  },
+  { key:'30/06', short:'Lun 30', label:'Lunes 30 Jun',      phase:'16avos de Final'  },
+  { key:'01/07', short:'Mar 1',  label:'Martes 1 Jul',      phase:'16avos de Final'  },
+  { key:'02/07', short:'Mié 2',  label:'Miércoles 2 Jul',   phase:'16avos de Final'  },
+  { key:'03/07', short:'Jue 3',  label:'Jueves 3 Jul',      phase:'16avos de Final'  },
 ];
+
+// ── Llave eliminatoria (Octavos → Final) ─────────────────────────────────────
+// home/away son referencias dinámicas: { src: matchId, side: 'winner'|'loser' }
+const BRACKET_MATCHES = [
+  // Octavos de Final · 4-7 Jul
+  { id:'Q01', date:'04/07', round:'Octavos', time:'18:00', venue:'Houston',      home:{src:'R01',side:'winner'}, away:{src:'R04',side:'winner'} },
+  { id:'Q02', date:'04/07', round:'Octavos', time:'23:00', venue:'Filadelfia',   home:{src:'R03',side:'winner'}, away:{src:'R06',side:'winner'} },
+  { id:'Q03', date:'05/07', round:'Octavos', time:'17:00', venue:'NJ (MetLife)', home:{src:'R02',side:'winner'}, away:{src:'R05',side:'winner'} },
+  { id:'Q04', date:'05/07', round:'Octavos', time:'23:00', venue:'México DF',    home:{src:'R07',side:'winner'}, away:{src:'R08',side:'winner'} },
+  { id:'Q05', date:'06/07', round:'Octavos', time:'17:00', venue:'Dallas',       home:{src:'R12',side:'winner'}, away:{src:'R11',side:'winner'} },
+  { id:'Q06', date:'06/07', round:'Octavos', time:'23:00', venue:'Seattle',      home:{src:'R10',side:'winner'}, away:{src:'R09',side:'winner'} },
+  { id:'Q07', date:'07/07', round:'Octavos', time:'17:00', venue:'Miami',        home:{src:'R15',side:'winner'}, away:{src:'R14',side:'winner'} },
+  { id:'Q08', date:'07/07', round:'Octavos', time:'23:00', venue:'Vancouver',    home:{src:'R13',side:'winner'}, away:{src:'R16',side:'winner'} },
+  // Cuartos de Final · 9-11 Jul
+  { id:'C01', date:'09/07', round:'Cuartos', time:'18:00', venue:'TBD', home:{src:'Q01',side:'winner'}, away:{src:'Q02',side:'winner'} },
+  { id:'C02', date:'10/07', round:'Cuartos', time:'18:00', venue:'TBD', home:{src:'Q03',side:'winner'}, away:{src:'Q04',side:'winner'} },
+  { id:'C03', date:'11/07', round:'Cuartos', time:'18:00', venue:'TBD', home:{src:'Q05',side:'winner'}, away:{src:'Q06',side:'winner'} },
+  { id:'C04', date:'11/07', round:'Cuartos', time:'18:00', venue:'TBD', home:{src:'Q07',side:'winner'}, away:{src:'Q08',side:'winner'} },
+  // Semifinales · 14-15 Jul
+  { id:'S01', date:'14/07', round:'Semis', time:'18:00', venue:'TBD', home:{src:'C01',side:'winner'}, away:{src:'C02',side:'winner'} },
+  { id:'S02', date:'15/07', round:'Semis', time:'18:00', venue:'TBD', home:{src:'C03',side:'winner'}, away:{src:'C04',side:'winner'} },
+  // Final y 3er Lugar · 18-19 Jul
+  { id:'FIN', date:'19/07', round:'Final',     time:'18:00', venue:'MetLife, NJ', home:{src:'S01',side:'winner'}, away:{src:'S02',side:'winner'} },
+  { id:'BRO', date:'18/07', round:'3er Lugar', time:'18:00', venue:'TBD',         home:{src:'S01',side:'loser'},  away:{src:'S02',side:'loser'}  },
+];
+
+const BRACKET_ROUNDS = [
+  { key:'16avos',  label:'16avos de Final', ids: ['R01','R02','R03','R04','R05','R06','R07','R08','R09','R10','R11','R12','R13','R14','R15','R16'] },
+  { key:'Octavos', label:'Octavos de Final', ids: ['Q01','Q02','Q03','Q04','Q05','Q06','Q07','Q08'] },
+  { key:'Cuartos', label:'Cuartos de Final', ids: ['C01','C02','C03','C04'] },
+  { key:'Semis',   label:'Semifinales',      ids: ['S01','S02'] },
+  { key:'Final',   label:'Final',            ids: ['FIN','BRO'] },
+];
+
+// Resuelve el nombre del equipo que avanzó (o perdió) en un partido dado
+const getMatchWinner = (matchId, homeTeam, awayTeam, real) => {
+  const r = real?.[matchId];
+  if (!r) return null;
+  if (r.winner === 'home') return homeTeam;
+  if (r.winner === 'away') return awayTeam;
+  const h = parseInt(r.home), a = parseInt(r.away);
+  if (!isNaN(h) && !isNaN(a) && r.home !== '' && r.away !== '') {
+    if (h > a) return homeTeam;
+    if (a > h) return awayTeam;
+  }
+  return null;
+};
+
+const resolveTeam = (srcId, side, real) => {
+  const m = MATCHES.find(x => x.id === srcId);
+  if (m) {
+    if (side === 'winner') return getMatchWinner(srcId, m.home, m.away, real);
+    if (side === 'loser') {
+      const w = getMatchWinner(srcId, m.home, m.away, real);
+      return w ? (w === m.home ? m.away : m.home) : null;
+    }
+    return side === 'home' ? m.home : m.away;
+  }
+  const bm = BRACKET_MATCHES.find(x => x.id === srcId);
+  if (!bm) return null;
+  const homeTeam = resolveTeam(bm.home.src, bm.home.side, real);
+  const awayTeam = resolveTeam(bm.away.src, bm.away.side, real);
+  if (side === 'winner') return getMatchWinner(srcId, homeTeam, awayTeam, real);
+  if (side === 'loser') {
+    const w = getMatchWinner(srcId, homeTeam, awayTeam, real);
+    return w ? (w === homeTeam ? awayTeam : homeTeam) : null;
+  }
+  return side === 'home' ? homeTeam : awayTeam;
+};
+
+// Fechas adicionales para la fase eliminatoria (pronósticos)
+const BRACKET_DATES = [
+  { key:'04/07', short:'Oct 4',   label:'Octavos · 4 Jul',    phase:'Octavos de Final' },
+  { key:'05/07', short:'Oct 5',   label:'Octavos · 5 Jul',    phase:'Octavos de Final' },
+  { key:'06/07', short:'Oct 6',   label:'Octavos · 6 Jul',    phase:'Octavos de Final' },
+  { key:'07/07', short:'Oct 7',   label:'Octavos · 7 Jul',    phase:'Octavos de Final' },
+  { key:'09/07', short:'Cto 9',   label:'Cuartos · 9 Jul',    phase:'Cuartos de Final' },
+  { key:'10/07', short:'Cto 10',  label:'Cuartos · 10 Jul',   phase:'Cuartos de Final' },
+  { key:'11/07', short:'Cto 11',  label:'Cuartos · 11 Jul',   phase:'Cuartos de Final' },
+  { key:'14/07', short:'SF 14',   label:'Semis · 14 Jul',     phase:'Semifinal'        },
+  { key:'15/07', short:'SF 15',   label:'Semis · 15 Jul',     phase:'Semifinal'        },
+  { key:'18/07', short:'3° Lug',  label:'3er Lugar · 18 Jul', phase:'3er Lugar'        },
+  { key:'19/07', short:'🏆Final', label:'🏆 FINAL · 19 Jul',  phase:'FINAL'            },
+];
+const ALL_PRED_DATES = [...DATES, ...BRACKET_DATES];
 
 const COLORS  = ['#22c55e','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#ec4899','#14b8a6','#f97316'];
 const DB_PATH = 'polla_2026';
+const PRIZES  = [400000, 100000, 50000];
+
+const formatPeso = (n) => '$' + Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
+// Calcula premios por RANGO único de puntos:
+// - Cada grupo con la misma puntuación recibe el premio de SU rango (no la suma de rangos ocupados).
+// - Si 1° empata entre 2, ambos dividen SOLO el premio de 1° y el de 2° pasa íntegro al siguiente grupo.
+// - Si 3° empata con un 4°, ambos dividen el premio de 3° aunque haya 4 participantes.
+const calcPrizes = (board) => {
+  const out = {};
+  let rank = 0; // índice en PRIZES — avanza una vez por grupo único, no por persona
+  let i = 0;
+  while (i < board.length && rank < PRIZES.length) {
+    const pts = board[i].pts;
+    let j = i;
+    // Encontrar TODOS los empatados (puede superar PRIZES.length en cantidad de personas)
+    while (j < board.length && board[j].pts === pts) j++;
+    const share = PRIZES[rank] / (j - i);
+    for (let k = i; k < j; k++) out[board[k].id] = { amount: share, count: j - i };
+    rank++;
+    i = j;
+  }
+  return out;
+};
 const LOCAL_KEY = 'polla_2026_v3';
 const SID_KEY   = 'polla_participant_id';
-const PIN       = '2026';
+const PIN       = '2478';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -69,12 +205,23 @@ const toFbKey  = (date) => date.replace('/', '_');
 const fromDate = (date) => MATCHES.filter(m => m.date === date);
 const slotsFor = (date) => [...new Set(fromDate(date).map(m => m.time))].sort();
 
-const isDateLocked = (locked, pid, date) => {
+// Un partido está bloqueado si el usuario lo bloqueó (por matchId) o si existe
+// el formato legado de bloqueo por día (toFbKey(date)).
+const isMatchLocked = (locked, pid, matchId) => {
   const l = locked[pid];
   if (!l) return false;
   if (l === true) return true;
-  return Boolean(l[toFbKey(date)]);
+  if (l[matchId]) return true;
+  const m = MATCHES.find(x => x.id === matchId);
+  return m ? Boolean(l[toFbKey(m.date)]) : false;
 };
+
+// Un día está "completamente bloqueado" cuando todos sus partidos lo están.
+const isDateFullyLocked = (locked, pid, date) =>
+  fromDate(date).every(m => isMatchLocked(locked, pid, m.id));
+
+// Mantener alias para compatibilidad con comparativa/tabla
+const isDateLocked = isDateFullyLocked;
 
 const getResult = (h, a) => {
   const ph = parseInt(h), pa = parseInt(a);
@@ -84,7 +231,7 @@ const getResult = (h, a) => {
 
 const calcScore = (pred, real) => {
   let pts = 0, exact = 0, correct = 0;
-  MATCHES.forEach(({ id }) => {
+  [...MATCHES, ...BRACKET_MATCHES].forEach(({ id }) => {
     const r = real?.[id]; const p = pred?.[id];
     if (r?.home == null || r?.home === '') return;
     if (p?.home == null || p?.home === '') return;
@@ -121,16 +268,21 @@ export default function WorldCupPolla() {
   const [predictions,  setPredictions]  = useState({});
   const [locked,       setLocked]       = useState({});
   const [dayLocked,    setDayLocked]    = useState({});
+  const [mLocked,      setMlocked]      = useState({});
   const [real,         setReal]         = useState({});
   const [connected,    setConnected]    = useState(!FB_READY);
   const [isLoading,    setIsLoading]    = useState(FB_READY);
   const [current,      setCurrent]      = useState(null);
   const [draft,        setDraft]        = useState({});
-  const [activeDate,   setActiveDate]   = useState('25/06');
+  const [activeDate,   setActiveDate]   = useState('03/07');
   const [adminMode,    setAdminMode]    = useState(false);
   const [adminSection, setAdminSection] = useState('results'); // 'results' | 'days' | 'users'
-  const [adminEditPid, setAdminEditPid] = useState('');
-  const [adminDraft,   setAdminDraft]   = useState({});
+  const [bracketRound, setBracketRound] = useState('16avos');
+  const [adminResultsView, setAdminResultsView] = useState('grupos'); // 'grupos' | 'llave'
+  const [adminLlaveRound,  setAdminLlaveRound]  = useState('Octavos');
+  const [adminEditPid,      setAdminEditPid]      = useState('');
+  const [adminDraft,        setAdminDraft]        = useState({});
+  const [confirmDeletePid,  setConfirmDeletePid]  = useState('');
   const [nameInput,    setNameInput]    = useState('');
   const [hClicks,      setHClicks]      = useState(0);
   const [pinModal,     setPinModal]     = useState(false);
@@ -154,6 +306,7 @@ export default function WorldCupPolla() {
         if (saved.predictions)  setPredictions(saved.predictions);
         if (saved.locked)       setLocked(saved.locked);
         if (saved.dayLocked)    setDayLocked(saved.dayLocked);
+        if (saved.matchLocked)  setMlocked(saved.matchLocked);
         if (saved.real)         setReal(saved.real);
         const sid = sessionStorage.getItem(SID_KEY);
         if (sid && saved.participants?.[sid]) {
@@ -173,6 +326,7 @@ export default function WorldCupPolla() {
       setPredictions(data.predictions  || {});
       setLocked(data.locked           || {});
       setDayLocked(data.dayLocked     || {});
+      setMlocked(data.matchLocked     || {});
       setReal(data.real               || {});
       const sid = sessionStorage.getItem(SID_KEY);
       if (sid && data.participants?.[sid]) {
@@ -188,7 +342,7 @@ export default function WorldCupPolla() {
 
   useEffect(() => {
     if (FB_READY || initialRef.current) return;
-    localStorage.setItem(LOCAL_KEY, JSON.stringify({ participants, predictions, locked, dayLocked, real }));
+    localStorage.setItem(LOCAL_KEY, JSON.stringify({ participants, predictions, locked, dayLocked, matchLocked: mLocked, real }));
   }, [participants, predictions, locked, dayLocked, real]);
 
   // ── Toast ─────────────────────────────────────────────────────────────────
@@ -201,17 +355,18 @@ export default function WorldCupPolla() {
 
   // ── Helpers de estado ─────────────────────────────────────────────────────
 
-  const isDayLocked = (date) => Boolean(dayLocked[toFbKey(date)]);
+  const isDayLocked          = (date)    => Boolean(dayLocked[toFbKey(date)]);
+  const isAdminMatchLocked   = (matchId) => Boolean(mLocked[matchId]);
+  const isBlockedForUser     = (matchId, date) =>
+    isDayLocked(date) || isAdminMatchLocked(matchId) ||
+    (current ? isMatchLocked(locked, current.id, matchId) : false);
 
-  // Para un partido: bloqueado si el día está admin-bloqueado O si el participante bloqueó ese día
-  const isMatchDisabled = (matchDate) =>
-    isDayLocked(matchDate) || (current ? isDateLocked(locked, current.id, matchDate) : false);
-
-  // Para mostrar: usa predictions[pid] si bloqueado (por él o por admin), draft si no
+  // Para mostrar: usa Firebase si el partido está bloqueado de alguna forma, draft si no
   const getPred = (matchId) => {
-    const m = MATCHES.find(x => x.id === matchId);
-    if (!m || !current) return {};
-    if (isDayLocked(m.date) || isDateLocked(locked, current.id, m.date))
+    if (!current) return {};
+    const m = MATCHES.find(x => x.id === matchId) ?? BRACKET_MATCHES.find(x => x.id === matchId);
+    if (!m) return {};
+    if (isDayLocked(m.date) || isAdminMatchLocked(matchId) || isMatchLocked(locked, current.id, matchId))
       return predictions[current.id]?.[matchId] ?? {};
     return draft[matchId] ?? {};
   };
@@ -243,8 +398,8 @@ export default function WorldCupPolla() {
 
   const updateDraft = (matchId, field, value) => {
     if (!current) return;
-    const m = MATCHES.find(x => x.id === matchId);
-    if (!m || isDayLocked(m.date) || isDateLocked(locked, current.id, m.date)) return;
+    const m = MATCHES.find(x => x.id === matchId) ?? BRACKET_MATCHES.find(x => x.id === matchId);
+    if (!m || isBlockedForUser(matchId, m.date)) return;
     setDraft(prev => {
       const next = { ...prev, [matchId]: { ...(prev[matchId] ?? {}), [field]: value } };
       localStorage.setItem(`draft_${current.id}`, JSON.stringify(next));
@@ -252,22 +407,52 @@ export default function WorldCupPolla() {
     });
   };
 
-  const saveDatePredictions = async (date) => {
-    if (!current || isDayLocked(date) || isDateLocked(locked, current.id, date)) return;
-    const dk = toFbKey(date);
-    const merged = { ...(predictions[current.id] ?? {}) };
-    fromDate(date).forEach(m => { if (draft[m.id]) merged[m.id] = draft[m.id]; });
+  // Bloquea un único partido
+  const saveMatchPrediction = async (matchId) => {
+    if (!current) return;
+    const m = MATCHES.find(x => x.id === matchId) ?? BRACKET_MATCHES.find(x => x.id === matchId);
+    if (!m || isBlockedForUser(matchId, m.date)) return;
+    const pred = draft[matchId];
+    if (pred?.home == null || pred?.home === '' || pred?.away == null || pred?.away === '') return;
     if (FB_READY) {
-      await set(ref(db, `${DB_PATH}/predictions/${current.id}`), merged);
-      await set(ref(db, `${DB_PATH}/locked/${current.id}/${dk}`), true);
+      await set(ref(db, `${DB_PATH}/predictions/${current.id}/${matchId}`), pred);
+      await set(ref(db, `${DB_PATH}/locked/${current.id}/${matchId}`), true);
     } else {
-      setPredictions(prev => ({ ...prev, [current.id]: merged }));
+      setPredictions(prev => ({ ...prev, [current.id]: { ...(prev[current.id] ?? {}), [matchId]: pred } }));
       setLocked(prev => ({
         ...prev,
-        [current.id]: { ...(typeof prev[current.id]==='object' ? prev[current.id] : {}), [dk]: true },
+        [current.id]: { ...(typeof prev[current.id]==='object' ? prev[current.id] : {}), [matchId]: true },
       }));
     }
-    showToast(`🔒 ${DATES.find(d=>d.key===date)?.label} guardado y bloqueado`);
+    showToast(`🔒 ${m.home} vs ${m.away} bloqueado`);
+  };
+
+  // Bloquea solo los partidos pendientes que tienen pronóstico en draft
+  const saveDatePredictions = async (date) => {
+    if (!current || isDayLocked(date)) return;
+    const toSave = getMatchesForDate(date).filter(m => {
+      if (isBlockedForUser(m.id, date)) return false;
+      const p = draft[m.id];
+      return p?.home != null && p?.home !== '' && p?.away != null && p?.away !== '';
+    });
+    if (!toSave.length) return;
+    const merged = { ...(predictions[current.id] ?? {}) };
+    toSave.forEach(m => { merged[m.id] = draft[m.id]; });
+    if (FB_READY) {
+      await set(ref(db, `${DB_PATH}/predictions/${current.id}`), merged);
+      for (const m of toSave) {
+        await set(ref(db, `${DB_PATH}/locked/${current.id}/${m.id}`), true);
+      }
+    } else {
+      setPredictions(prev => ({ ...prev, [current.id]: merged }));
+      const perMatch = {};
+      toSave.forEach(m => { perMatch[m.id] = true; });
+      setLocked(prev => ({
+        ...prev,
+        [current.id]: { ...(typeof prev[current.id]==='object' ? prev[current.id] : {}), ...perMatch },
+      }));
+    }
+    showToast(`🔒 ${toSave.length} partido${toSave.length!==1?'s':''} bloqueado${toSave.length!==1?'s':''}`);
   };
 
   // ── Handlers admin ────────────────────────────────────────────────────────
@@ -286,9 +471,54 @@ export default function WorldCupPolla() {
     showToast(now ? `🔒 ${DATES.find(d=>d.key===date)?.label} bloqueado para todos` : `🔓 ${DATES.find(d=>d.key===date)?.label} desbloqueado`);
   };
 
+  const toggleMatchLockAdmin = async (matchId) => {
+    const now = !mLocked[matchId];
+    const m = MATCHES.find(x => x.id === matchId);
+    if (FB_READY) await set(ref(db, `${DB_PATH}/matchLocked/${matchId}`), now || null);
+    else setMlocked(prev => { const n={...prev}; if(now) n[matchId]=true; else delete n[matchId]; return n; });
+    showToast(now ? `🔒 ${m?.home} vs ${m?.away} bloqueado` : `🔓 ${m?.home} vs ${m?.away} desbloqueado`);
+  };
+
+  // Desbloquea todos los partidos de un día para un participante específico
+  const adminUnlockUserDay = async (pid, date) => {
+    if (FB_READY) {
+      for (const m of fromDate(date)) {
+        await set(ref(db, `${DB_PATH}/locked/${pid}/${m.id}`), null);
+      }
+      // Limpiar también el formato legado de día si existe
+      await set(ref(db, `${DB_PATH}/locked/${pid}/${toFbKey(date)}`), null);
+    } else {
+      setLocked(prev => {
+        const next = { ...prev, [pid]: { ...(prev[pid] ?? {}) } };
+        fromDate(date).forEach(m => { delete next[pid][m.id]; });
+        delete next[pid][toFbKey(date)];
+        return next;
+      });
+    }
+    showToast(`🔓 ${participants[pid]?.name} desbloqueado para ${DATES.find(d=>d.key===date)?.label}`);
+  };
+
   const loadAdminUser = (pid) => {
     setAdminEditPid(pid);
     setAdminDraft({ ...(predictions[pid] ?? {}) });
+    setConfirmDeletePid('');
+  };
+
+  const deleteParticipant = async (pid) => {
+    const name = participants[pid]?.name;
+    if (FB_READY) {
+      await set(ref(db, `${DB_PATH}/participants/${pid}`), null);
+      await set(ref(db, `${DB_PATH}/predictions/${pid}`), null);
+      await set(ref(db, `${DB_PATH}/locked/${pid}`), null);
+    } else {
+      setParticipants(prev => { const n = {...prev}; delete n[pid]; return n; });
+      setPredictions(prev => { const n = {...prev}; delete n[pid]; return n; });
+      setLocked(prev => { const n = {...prev}; delete n[pid]; return n; });
+    }
+    if (adminEditPid === pid) setAdminEditPid('');
+    if (current?.id === pid) { setCurrent(null); sessionStorage.removeItem(SID_KEY); }
+    setConfirmDeletePid('');
+    showToast(`🗑️ ${name} eliminado`);
   };
 
   const updateAdminDraft = (matchId, field, value) => {
@@ -315,6 +545,20 @@ export default function WorldCupPolla() {
 
   // ── Derived ───────────────────────────────────────────────────────────────
 
+  // Bracket matches con equipos resueltos dinámicamente desde real[]
+  const resolvedBracketMatches = useMemo(() =>
+    BRACKET_MATCHES.map(bm => ({
+      ...bm,
+      home: resolveTeam(bm.home.src, bm.home.side, real) ?? `G.${bm.home.src}`,
+      away: resolveTeam(bm.away.src, bm.away.side, real) ?? `G.${bm.away.src}`,
+    })), [real]);
+
+  // Retorna los partidos de una fecha — MATCHES para grupos/16avos, bracket para el resto
+  const getMatchesForDate = (date) => {
+    if (DATES.some(d => d.key === date)) return fromDate(date);
+    return resolvedBracketMatches.filter(m => m.date === date);
+  };
+
   const partList = useMemo(() => Object.values(participants).sort((a,b) => Number(a.id)-Number(b.id)), [participants]);
 
   const leaderboard = useMemo(() =>
@@ -329,15 +573,17 @@ export default function WorldCupPolla() {
     { id:'inicio',      label:'Inicio',      emoji:'🏠' },
     { id:'pronosticos', label:'Pronósticos', emoji:'⚽' },
     { id:'tabla',       label:'Tabla',       emoji:'📊' },
+    { id:'llave',       label:'Llave',       emoji:'🏆' },
     ...(adminMode ? [{ id:'admin', label:'Admin', emoji:'🔐' }] : []),
   ];
 
   // ── Sub-componentes ───────────────────────────────────────────────────────
 
-  const DateTabs = ({ value, onChange, showLock = false }) => (
+  const DateTabs = ({ value, onChange, showLock = false, dates = DATES }) => (
     <div className="flex gap-1 overflow-x-auto">
-      {DATES.map(d => {
-        const pLock = showLock && current && isDateLocked(locked, current.id, d.key);
+      {dates.map(d => {
+        const hasRegular = fromDate(d.key).length > 0;
+        const pLock = showLock && current && hasRegular && isDateLocked(locked, current.id, d.key);
         const dLock = isDayLocked(d.key);
         return (
           <button key={d.key} onClick={() => onChange(d.key)}
@@ -352,40 +598,60 @@ export default function WorldCupPolla() {
     </div>
   );
 
-  const MatchRow = ({ m, homeVal, awayVal, onHome, onAway, disabled, gold }) => (
-    <div className={`rounded-xl overflow-hidden transition-colors ${disabled ? 'bg-white/2' : 'bg-white/5 hover:bg-white/8'}`}>
-      <div className="flex items-center gap-2 p-3">
-        <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
-          <span className="text-gray-200 text-xs font-semibold truncate hidden sm:block">{m.home}</span>
-          <FlagImg team={m.home} size={28}/>
+  const MatchRow = ({ m, homeVal, awayVal, onHome, onAway, disabled, gold, onLock, matchLocked, adminLocked }) => {
+    const hasPred  = homeVal != null && homeVal !== '' && awayVal != null && awayVal !== '';
+    const inputOff = disabled || matchLocked || adminLocked;
+    return (
+      <div className={`rounded-xl overflow-hidden transition-colors ${inputOff ? 'bg-white/2' : 'bg-white/5 hover:bg-white/8'}`}>
+        <div className="flex items-center gap-2 p-3">
+          <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
+            <span className="text-gray-200 text-xs font-semibold truncate hidden sm:block">{m.home}</span>
+            <FlagImg team={m.home} size={28}/>
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <input type="number" min="0" max="20" placeholder="0"
+              value={homeVal ?? ''}
+              onChange={e => !inputOff && onHome?.(e.target.value)}
+              readOnly={inputOff}
+              className={numInput(inputOff)}
+              style={gold && !inputOff ? { borderColor:'rgba(245,158,11,0.5)' } : {}}
+            />
+            <span className="text-gray-500 font-black text-xl select-none">–</span>
+            <input type="number" min="0" max="20" placeholder="0"
+              value={awayVal ?? ''}
+              onChange={e => !inputOff && onAway?.(e.target.value)}
+              readOnly={inputOff}
+              className={numInput(inputOff)}
+              style={gold && !inputOff ? { borderColor:'rgba(245,158,11,0.5)' } : {}}
+            />
+          </div>
+          <div className="flex-1 flex items-center gap-2 min-w-0">
+            <FlagImg team={m.away} size={28}/>
+            <span className="text-gray-200 text-xs font-semibold truncate hidden sm:block">{m.away}</span>
+          </div>
+          {onLock && (
+            adminLocked
+              ? <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center" title="Bloqueado por el juez">
+                  <Lock size={14} className="text-red-400"/>
+                </div>
+              : matchLocked
+                ? <div className="flex-shrink-0 w-8 h-8 flex items-center justify-center">
+                    <Lock size={14} className="text-green-400"/>
+                  </div>
+                : <button onClick={onLock} disabled={!hasPred} title="Bloquear este partido"
+                    className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
+                      hasPred ? 'bg-green-500/20 text-green-400 hover:bg-green-500/35 active:scale-90' : 'text-gray-700 cursor-not-allowed'
+                    }`}>
+                    <Lock size={14}/>
+                  </button>
+          )}
         </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <input type="number" min="0" max="20" placeholder="0"
-            value={homeVal ?? ''}
-            onChange={e => !disabled && onHome?.(e.target.value)}
-            readOnly={disabled}
-            className={numInput(disabled)}
-            style={gold && !disabled ? { borderColor:'rgba(245,158,11,0.5)' } : {}}
-          />
-          <span className="text-gray-500 font-black text-xl select-none">–</span>
-          <input type="number" min="0" max="20" placeholder="0"
-            value={awayVal ?? ''}
-            onChange={e => !disabled && onAway?.(e.target.value)}
-            readOnly={disabled}
-            className={numInput(disabled)}
-            style={gold && !disabled ? { borderColor:'rgba(245,158,11,0.5)' } : {}}
-          />
-        </div>
-        <div className="flex-1 flex items-center gap-2 min-w-0">
-          <FlagImg team={m.away} size={28}/>
-          <span className="text-gray-200 text-xs font-semibold truncate hidden sm:block">{m.away}</span>
+        <div className="flex items-center justify-center gap-1 pb-2 text-xs text-gray-600">
+          <MapPin size={9}/> {m.venue} <span className="text-gray-700 mx-1">·</span> {m.group ? `Gr. ${m.group}` : (m.round || '')}
         </div>
       </div>
-      <div className="flex items-center justify-center gap-1 pb-2 text-xs text-gray-600">
-        <MapPin size={9}/> {m.venue} <span className="text-gray-700 mx-1">·</span> Gr. {m.group}
-      </div>
-    </div>
-  );
+    );
+  };
 
   if (isLoading) return (
     <div className="min-h-screen flex items-center justify-center text-white"
@@ -453,7 +719,7 @@ export default function WorldCupPolla() {
           <p className="text-green-400 font-bold tracking-widest text-sm mt-1">USA · CANADÁ · MÉXICO 2026</p>
           <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1.5 bg-white/5 rounded-xl px-3 py-1.5 text-xs text-gray-400 border border-white/10">
-              <Calendar size={11}/> Jornada Final Grupos · <strong className="text-white">25–27 Jun</strong>
+              <Calendar size={11}/> Grupos + 16avos · <strong className="text-white">25 Jun – 3 Jul</strong>
             </span>
             <span className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs border ${
               FB_READY && connected ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
@@ -499,7 +765,7 @@ export default function WorldCupPolla() {
             </div>
 
             <div className={`${glass} p-5`}>
-              <h3 className="text-green-400 font-bold mb-4 flex items-center gap-2"><Calendar size={15}/> Partidos · 25–27 Jun 2026</h3>
+              <h3 className="text-green-400 font-bold mb-4 flex items-center gap-2"><Calendar size={15}/> Partidos · 25 Jun – 3 Jul 2026</h3>
               <DateTabs value={activeDate} onChange={setActiveDate}/>
               <div className="mt-3">
                 {(() => {
@@ -545,7 +811,7 @@ export default function WorldCupPolla() {
                           style={{ background:p.color }}>{p.initials}</div>
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-white truncate">{p.name}</div>
-                          <div className="text-xs text-gray-400">{pts} pts · {savedDates}/3 días guardados</div>
+                          <div className="text-xs text-gray-400">{pts} pts · {savedDates}/${DATES.length} días guardados</div>
                         </div>
                         <div className="flex flex-col gap-0.5">
                           {DATES.map(d => (
@@ -609,15 +875,26 @@ export default function WorldCupPolla() {
                   </div>
                 </div>
 
-                <DateTabs value={activeDate} onChange={setActiveDate} showLock/>
+                <DateTabs value={activeDate} onChange={setActiveDate} showLock dates={ALL_PRED_DATES}/>
 
                 {(() => {
-                  const d         = DATES.find(d => d.key === activeDate);
-                  const adlocked  = isDayLocked(activeDate);
-                  const pLocked   = isDateLocked(locked, current.id, activeDate);
-                  const anyLocked = adlocked || pLocked;
-                  const filled    = filledForDate(anyLocked ? predictions[current.id] : draft, activeDate);
-                  const total     = fromDate(activeDate).length;
+                  const d           = ALL_PRED_DATES.find(d => d.key === activeDate);
+                  const adlocked    = isDayLocked(activeDate);
+                  const dayMatches  = getMatchesForDate(activeDate);
+                  const pLocked     = dayMatches.length > 0 && dayMatches.every(m => isMatchLocked(locked, current.id, m.id));
+                  const anyLocked   = adlocked || pLocked;
+                  const total       = dayMatches.length;
+                  const filled      = dayMatches.filter(m => {
+                    const p = getPred(m.id);
+                    return p?.home != null && p?.home !== '' && p?.away != null && p?.away !== '';
+                  }).length;
+                  const pendingFilled = dayMatches.filter(m => {
+                    if (isBlockedForUser(m.id, activeDate)) return false;
+                    const p = draft[m.id];
+                    return p?.home != null && p?.home !== '' && p?.away != null && p?.away !== '';
+                  }).length;
+
+                  const times = [...new Set(dayMatches.map(m => m.time))].sort();
 
                   return (
                     <div className={`${glass} p-4`} style={adlocked ? { border:'1px solid rgba(239,68,68,0.3)' } : pLocked ? { border:'1px solid rgba(34,197,94,0.3)' } : {}}>
@@ -637,18 +914,21 @@ export default function WorldCupPolla() {
                       </div>
 
                       <div className="space-y-3">
-                        {slotsFor(activeDate).map(time => (
+                        {times.map(time => (
                           <div key={time}>
                             <div className="text-xs text-gray-600 font-semibold mb-2 flex items-center gap-1"><Clock size={10}/> {time} COL/PER</div>
                             <div className="space-y-2">
-                              {fromDate(activeDate).filter(m => m.time===time).map(m => {
+                              {dayMatches.filter(m => m.time===time).map(m => {
                                 const p = getPred(m.id);
                                 return (
                                   <MatchRow key={m.id} m={m}
                                     homeVal={p?.home} awayVal={p?.away}
                                     onHome={v => updateDraft(m.id,'home',v)}
                                     onAway={v => updateDraft(m.id,'away',v)}
-                                    disabled={isMatchDisabled(m.date)}
+                                    disabled={isDayLocked(m.date)}
+                                    adminLocked={isAdminMatchLocked(m.id)}
+                                    matchLocked={isMatchLocked(locked, current.id, m.id)}
+                                    onLock={() => saveMatchPrediction(m.id)}
                                   />
                                 );
                               })}
@@ -664,13 +944,13 @@ export default function WorldCupPolla() {
                               Faltan {total - filled} partido{total-filled!==1?'s':''} por pronosticar
                             </p>
                           )}
-                          <button onClick={() => saveDatePredictions(activeDate)} disabled={filled===0}
+                          <button onClick={() => saveDatePredictions(activeDate)} disabled={pendingFilled===0}
                             className="w-full py-3.5 rounded-xl font-black text-base transition-all disabled:opacity-30 disabled:cursor-not-allowed active:scale-[0.98] flex items-center justify-center gap-2"
-                            style={filled>0 ? { background:'linear-gradient(135deg,#22c55e,#16a34a)', color:'black' } : { background:'rgba(255,255,255,0.05)', color:'#6b7280' }}>
+                            style={pendingFilled>0 ? { background:'linear-gradient(135deg,#22c55e,#16a34a)', color:'black' } : { background:'rgba(255,255,255,0.05)', color:'#6b7280' }}>
                             <Lock size={17}/>
-                            {filled===total ? `Guardar y bloquear ${d?.short}` : `Guardar ${filled} pronóstico${filled!==1?'s':''} y bloquear ${d?.short}`}
+                            {pendingFilled===0 ? 'Nada pendiente' : `Bloquear ${pendingFilled} partido${pendingFilled!==1?'s':''} restante${pendingFilled!==1?'s':''}`}
                           </button>
-                          <p className="text-center text-xs text-gray-600 mt-2">Solo se bloquea este día — los demás siguen editables</p>
+                          <p className="text-center text-xs text-gray-600 mt-2">Usa 🔒 por partido o este botón para bloquear todos los pendientes</p>
                         </div>
                       )}
                     </div>
@@ -681,40 +961,162 @@ export default function WorldCupPolla() {
           </>
         )}
 
+        {/* ════════ LLAVE ════════ */}
+        {tab==='llave' && (
+          <>
+            {/* Selector de ronda */}
+            <div className="flex gap-1 overflow-x-auto pb-1">
+              {BRACKET_ROUNDS.map(r => (
+                <button key={r.key} onClick={() => setBracketRound(r.key)}
+                  className={`flex-shrink-0 px-3 py-2 rounded-xl font-bold text-xs transition-all ${
+                    bracketRound===r.key ? 'bg-yellow-400 text-black' : 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                  }`}>{r.label}</button>
+              ))}
+            </div>
+
+            {(() => {
+              const round = BRACKET_ROUNDS.find(r => r.key === bracketRound);
+              const matchIds = round?.ids ?? [];
+
+              return (
+                <div className={`${glass} p-4`} style={{ border:'1px solid rgba(245,158,11,0.25)' }}>
+                  <h3 className="text-yellow-400 font-bold mb-4 flex items-center gap-2">
+                    🏆 {round?.label}
+                  </h3>
+                  <div className="space-y-3">
+                    {matchIds.map(mid => {
+                      // Resolver equipos: R01-R16 vienen de MATCHES, el resto de BRACKET_MATCHES
+                      const staticM = MATCHES.find(x => x.id === mid);
+                      const bracketM = BRACKET_MATCHES.find(x => x.id === mid);
+                      const m = staticM ?? bracketM;
+                      if (!m) return null;
+
+                      const homeTeam = staticM ? staticM.home : resolveTeam(bracketM.home.src, bracketM.home.side, real);
+                      const awayTeam = staticM ? staticM.away : resolveTeam(bracketM.away.src, bracketM.away.side, real);
+                      const r = real[mid];
+                      const hasResult = r?.home != null && r?.home !== '' && r?.away != null && r?.away !== '';
+
+                      const winner = hasResult ? getMatchWinner(mid, homeTeam, awayTeam, real) : null;
+                      const isPens = hasResult && r.winner && parseInt(r.home) === parseInt(r.away);
+
+                      return (
+                        <div key={mid} className={`rounded-xl border p-3 transition-colors ${
+                          hasResult ? 'bg-white/5 border-white/10' : 'bg-white/2 border-white/5'
+                        }`}>
+                          <div className="flex items-center gap-2">
+                            {/* Equipo local */}
+                            <div className={`flex-1 flex items-center justify-end gap-2 min-w-0 ${winner && winner===homeTeam ? 'opacity-100' : winner ? 'opacity-40' : ''}`}>
+                              <span className="text-xs font-semibold text-gray-200 truncate hidden sm:block">{homeTeam ?? '?'}</span>
+                              {homeTeam ? <FlagImg team={homeTeam} size={26}/> : <span className="w-7 h-5 rounded bg-white/10 inline-block"/>}
+                            </div>
+
+                            {/* Marcador */}
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {hasResult ? (
+                                <div className="flex items-center gap-1 px-2">
+                                  <span className={`font-black text-lg w-6 text-center ${winner===homeTeam ? 'text-white' : 'text-gray-500'}`}>{r.home}</span>
+                                  <span className="text-gray-600 font-bold">-</span>
+                                  <span className={`font-black text-lg w-6 text-center ${winner===awayTeam ? 'text-white' : 'text-gray-500'}`}>{r.away}</span>
+                                </div>
+                              ) : (
+                                <div className="px-3 py-1 rounded-lg bg-white/5 text-gray-600 text-xs font-bold">{m.time}</div>
+                              )}
+                            </div>
+
+                            {/* Equipo visitante */}
+                            <div className={`flex-1 flex items-center gap-2 min-w-0 ${winner && winner===awayTeam ? 'opacity-100' : winner ? 'opacity-40' : ''}`}>
+                              {awayTeam ? <FlagImg team={awayTeam} size={26}/> : <span className="w-7 h-5 rounded bg-white/10 inline-block"/>}
+                              <span className="text-xs font-semibold text-gray-200 truncate hidden sm:block">{awayTeam ?? '?'}</span>
+                            </div>
+                          </div>
+
+                          {/* Pie del partido */}
+                          <div className="flex items-center justify-center gap-2 mt-1.5 text-xs text-gray-600">
+                            <MapPin size={9}/> {m.venue}
+                            {isPens && <span className="text-yellow-500 font-bold ml-1">· Penales</span>}
+                            {winner && <span className="text-green-400 font-semibold ml-1">· Avanzó: {winner}</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+          </>
+        )}
+
         {/* ════════ TABLA ════════ */}
         {tab==='tabla' && (
           <>
+            {/* Banner de premios */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-2xl p-4 flex flex-col items-center gap-1 border"
+                style={{ background:'linear-gradient(135deg,rgba(245,158,11,0.15),rgba(245,158,11,0.05))', borderColor:'rgba(245,158,11,0.4)' }}>
+                <span className="text-3xl">🥇</span>
+                <span className="text-yellow-400 font-black text-lg">$400.000</span>
+                <span className="text-gray-400 text-xs font-semibold">1er lugar</span>
+              </div>
+              <div className="rounded-2xl p-4 flex flex-col items-center gap-1 border"
+                style={{ background:'linear-gradient(135deg,rgba(156,163,175,0.15),rgba(156,163,175,0.05))', borderColor:'rgba(156,163,175,0.3)' }}>
+                <span className="text-3xl">🥈</span>
+                <span className="text-gray-300 font-black text-lg">$100.000</span>
+                <span className="text-gray-400 text-xs font-semibold">2do lugar</span>
+              </div>
+              <div className="rounded-2xl p-4 flex flex-col items-center gap-1 border"
+                style={{ background:'linear-gradient(135deg,rgba(180,83,9,0.15),rgba(180,83,9,0.05))', borderColor:'rgba(180,83,9,0.35)' }}>
+                <span className="text-3xl">🥉</span>
+                <span className="text-orange-400 font-black text-lg">$50.000</span>
+                <span className="text-gray-400 text-xs font-semibold">3er lugar</span>
+              </div>
+            </div>
+
             <div className={`${glass} p-5`}>
               <h2 className="text-xl font-bold text-white mb-5 flex items-center gap-2">
                 <BarChart3 size={20} className="text-green-400"/> Tabla de Posiciones
               </h2>
               {leaderboard.length === 0
                 ? <div className="text-center py-14 text-gray-500"><div className="text-5xl mb-3">📊</div><p>Nadie se ha unido todavía.</p></div>
-                : (
-                <div className="space-y-2">
-                  {leaderboard.map((p, idx) => {
-                    const savedDates = DATES.filter(d => isDateLocked(locked, p.id, d.key)).length;
-                    return (
-                      <div key={p.id} className={`flex items-center gap-3 p-4 rounded-xl border ${
-                        idx===0?'border-yellow-400/40 bg-yellow-400/8':idx===1?'border-gray-400/30 bg-gray-300/5':idx===2?'border-orange-700/30 bg-orange-800/5':'border-white/5 bg-white/2'
-                      }`}>
-                        <div className="w-9 text-center flex-shrink-0">
-                          {idx===0?<span className="text-2xl">🥇</span>:idx===1?<span className="text-2xl">🥈</span>:idx===2?<span className="text-2xl">🥉</span>:<span className="text-gray-500 font-bold">{idx+1}</span>}
-                        </div>
-                        <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm text-black flex-shrink-0"
-                          style={{ background:p.color }}>{p.initials}</div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-bold text-white truncate">{p.name}</div>
-                          <div className="text-xs text-gray-400 mt-0.5">
-                            <span className="text-green-400 font-bold">{p.exact}</span> exactos · <span className="text-blue-400 font-bold">{p.correct}</span> ganador · {savedDates}/3 días
+                : (() => {
+                  const prizeMap = calcPrizes(leaderboard);
+                  return (
+                    <div className="space-y-2">
+                      {leaderboard.map((p, idx) => {
+                        const savedDates = DATES.filter(d => isDateLocked(locked, p.id, d.key)).length;
+                        const prize = prizeMap[p.id];
+                        return (
+                          <div key={p.id} className={`flex items-center gap-3 p-4 rounded-xl border ${
+                            idx===0?'border-yellow-400/40 bg-yellow-400/8':idx===1?'border-gray-400/30 bg-gray-300/5':idx===2?'border-orange-700/30 bg-orange-800/5':'border-white/5 bg-white/2'
+                          }`}>
+                            <div className="w-9 text-center flex-shrink-0">
+                              {idx===0?<span className="text-2xl">🥇</span>:idx===1?<span className="text-2xl">🥈</span>:idx===2?<span className="text-2xl">🥉</span>:<span className="text-gray-500 font-bold">{idx+1}</span>}
+                            </div>
+                            <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm text-black flex-shrink-0"
+                              style={{ background:p.color }}>{p.initials}</div>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold text-white truncate">{p.name}</div>
+                              <div className="text-xs text-gray-400 mt-0.5">
+                                <span className="text-green-400 font-bold">{p.exact}</span> exactos · <span className="text-blue-400 font-bold">{p.correct}</span> ganador · {savedDates}/3 días
+                              </div>
+                              {prize && (
+                                <span className={`inline-flex items-center gap-1 mt-1 text-xs font-black rounded-lg px-2 py-0.5 ${
+                                  idx===0 ? 'text-yellow-400 bg-yellow-400/10 border border-yellow-400/30'
+                                  : idx===1 ? 'text-gray-300 bg-gray-300/10 border border-gray-300/20'
+                                  : 'text-orange-400 bg-orange-400/10 border border-orange-400/30'
+                                }`}>
+                                  {formatPeso(prize.amount)}
+                                  {prize.count > 1 && <span className="font-semibold opacity-70"> ÷{prize.count}</span>}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-right"><div className="font-black text-2xl" style={{ color:'#f59e0b' }}>{p.pts}</div><div className="text-xs text-gray-500">pts</div></div>
                           </div>
-                        </div>
-                        <div className="text-right"><div className="font-black text-2xl" style={{ color:'#f59e0b' }}>{p.pts}</div><div className="text-xs text-gray-500">pts</div></div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                        );
+                      })}
+                    </div>
+                  );
+                })()
+              }
             </div>
 
             {hasRealResults && (
@@ -766,14 +1168,14 @@ export default function WorldCupPolla() {
                             <td className="py-2 pr-3 text-gray-300 whitespace-nowrap">
                               <div className="flex items-center gap-1">
                                 <FlagImg team={m.home} size={14}/> vs <FlagImg team={m.away} size={14}/>
-                                <span className="text-gray-600 ml-1 hidden sm:inline">Gr.{m.group}</span>
+                                <span className="text-gray-600 ml-1 hidden sm:inline">{m.group ? `Gr.${m.group}` : (m.round || '')}</span>
                               </div>
                             </td>
                             {hasRealResults && <td className="py-2 px-2 text-center font-black text-white">{hasR ? `${r.home}-${r.away}` : '–'}</td>}
                             {partList.map(p => {
                               const pred = predictions[p.id]?.[m.id];
                               const ok = pred?.home != null && pred?.home !== '' && pred?.away != null && pred?.away !== '';
-                              const dlk = isDateLocked(locked, p.id, m.date) || isDayLocked(m.date);
+                              const dlk = isMatchLocked(locked, p.id, m.id) || isDayLocked(m.date);
                               let badge = '';
                               if (hasR && ok) {
                                 const rr = getResult(r.home, r.away), pr = getResult(pred.home, pred.away);
@@ -824,23 +1226,78 @@ export default function WorldCupPolla() {
             {adminSection==='results' && (
               <div className={`${glass} p-5`} style={{ border:'1px solid rgba(245,158,11,0.4)' }}>
                 <h2 className="text-xl font-bold text-yellow-400 mb-1 flex items-center gap-2"><Settings size={20}/> Resultados Reales</h2>
-                <p className="text-gray-400 text-sm mb-4">Los puntos se recalculan al instante.</p>
-                <DateTabs value={activeDate} onChange={setActiveDate}/>
+                <p className="text-gray-400 text-sm mb-4">Los puntos se recalculan al instante. En partidos de penales marca el ganador.</p>
+
+                <DateTabs value={activeDate} onChange={setActiveDate} dates={ALL_PRED_DATES}/>
+
                 <div className="mt-4 space-y-3">
-                  {slotsFor(activeDate).map(time => (
-                    <div key={time}>
-                      <div className="text-yellow-400/60 text-xs font-bold mb-2 flex items-center gap-1 uppercase tracking-wider"><Clock size={10}/> {time} COL/PER</div>
-                      <div className="space-y-2">
-                        {fromDate(activeDate).filter(m => m.time===time).map(m => (
-                          <MatchRow key={m.id} m={m} gold
-                            homeVal={real[m.id]?.home} awayVal={real[m.id]?.away}
-                            onHome={v => setRealResult(m.id,'home',v)} onAway={v => setRealResult(m.id,'away',v)}
-                            disabled={false}
-                          />
-                        ))}
+                  {(() => {
+                    const dayMatches = getMatchesForDate(activeDate);
+                    const times = [...new Set(dayMatches.map(m => m.time))].sort();
+                    return times.map(time => (
+                      <div key={time}>
+                        <div className="text-yellow-400/60 text-xs font-bold mb-2 flex items-center gap-1 uppercase tracking-wider"><Clock size={10}/> {time} COL/PER</div>
+                        <div className="space-y-2">
+                          {dayMatches.filter(m => m.time === time).map(m => {
+                            const isBracket = BRACKET_MATCHES.some(bm => bm.id === m.id);
+                            const r = real[m.id] ?? {};
+                            const h = parseInt(r.home), a = parseInt(r.away);
+                            const tied = !isNaN(h) && !isNaN(a) && h === a && r.home !== '' && r.away !== '';
+                            if (!isBracket) {
+                              return (
+                                <MatchRow key={m.id} m={m} gold
+                                  homeVal={r.home} awayVal={r.away}
+                                  onHome={v => setRealResult(m.id,'home',v)} onAway={v => setRealResult(m.id,'away',v)}
+                                  disabled={false}
+                                />
+                              );
+                            }
+                            return (
+                              <div key={m.id} className="bg-white/5 rounded-xl p-3 border border-white/10 space-y-2">
+                                <div className="text-xs text-yellow-400/60 font-bold uppercase tracking-wider">{m.round} · {m.time} · {m.venue}</div>
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 flex items-center justify-end gap-1.5">
+                                    <span className="text-xs text-gray-300 truncate">{m.home ?? '?'}</span>
+                                    {m.home && <FlagImg team={m.home} size={20}/>}
+                                  </div>
+                                  <div className="flex items-center gap-1 flex-shrink-0">
+                                    <input type="number" min="0" max="20" placeholder="0" value={r.home ?? ''}
+                                      onChange={e => setRealResult(m.id,'home',e.target.value)}
+                                      className="w-12 text-center bg-white/10 border border-yellow-400/30 rounded-lg py-1.5 text-white font-black text-sm focus:outline-none focus:border-yellow-400"/>
+                                    <span className="text-gray-600 font-bold">-</span>
+                                    <input type="number" min="0" max="20" placeholder="0" value={r.away ?? ''}
+                                      onChange={e => setRealResult(m.id,'away',e.target.value)}
+                                      className="w-12 text-center bg-white/10 border border-yellow-400/30 rounded-lg py-1.5 text-white font-black text-sm focus:outline-none focus:border-yellow-400"/>
+                                  </div>
+                                  <div className="flex-1 flex items-center gap-1.5">
+                                    {m.away && <FlagImg team={m.away} size={20}/>}
+                                    <span className="text-xs text-gray-300 truncate">{m.away ?? '?'}</span>
+                                  </div>
+                                </div>
+                                {tied && (
+                                  <div className="flex items-center gap-2 pt-1 border-t border-white/8">
+                                    <span className="text-xs text-yellow-400 font-bold">Ganó en penales:</span>
+                                    {[['home', m.home], ['away', m.away]].map(([side, team]) => (
+                                      <button key={side} onClick={async () => {
+                                        if (FB_READY) await set(ref(db, `${DB_PATH}/real/${m.id}/winner`), side);
+                                        else setReal(prev => ({...prev, [m.id]: {...(prev[m.id]??{}), winner: side}}));
+                                        showToast(`✓ Avanzó ${team}`);
+                                      }}
+                                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold transition-all ${
+                                          r.winner === side ? 'bg-green-500 text-black' : 'bg-white/10 text-gray-400 hover:bg-white/20'
+                                        }`}>
+                                        {team && <FlagImg team={team} size={14}/>} {team ?? side}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ));
+                  })()}
                 </div>
               </div>
             )}
@@ -848,30 +1305,56 @@ export default function WorldCupPolla() {
             {/* ── Sección: Control de días ── */}
             {adminSection==='days' && (
               <div className={`${glass} p-5`} style={{ border:'1px solid rgba(245,158,11,0.4)' }}>
-                <h2 className="text-xl font-bold text-yellow-400 mb-1 flex items-center gap-2"><Lock size={20}/> Control de Días</h2>
-                <p className="text-gray-400 text-sm mb-5">Bloquea un día para que nadie pueda guardar ni editar pronósticos.</p>
-                <div className="space-y-3">
+                <h2 className="text-xl font-bold text-yellow-400 mb-1 flex items-center gap-2"><Lock size={20}/> Control de Partidos</h2>
+                <p className="text-gray-400 text-sm mb-5">Bloquea o desbloquea días completos o partidos individuales.</p>
+                <div className="space-y-4">
                   {DATES.map(d => {
-                    const locked = isDayLocked(d.key);
+                    const dl = isDayLocked(d.key);
                     return (
-                      <div key={d.key} className={`flex items-center justify-between p-4 rounded-xl border ${
-                        locked ? 'bg-red-500/10 border-red-500/30' : 'bg-white/5 border-white/10'
-                      }`}>
-                        <div>
-                          <div className={`font-bold ${locked ? 'text-red-400' : 'text-white'}`}>{d.label}</div>
-                          <div className="text-xs text-gray-500">{d.phase}</div>
-                          <div className={`text-xs mt-1 font-semibold ${locked ? 'text-red-400' : 'text-gray-500'}`}>
-                            {locked ? '🔒 Bloqueado — nadie puede editar' : '🟢 Abierto — participantes pueden editar'}
+                      <div key={d.key} className={`rounded-xl border overflow-hidden ${dl ? 'border-red-500/30' : 'border-white/10'}`}>
+                        {/* Fila del día */}
+                        <div className={`flex items-center justify-between p-3 ${dl ? 'bg-red-500/10' : 'bg-white/5'}`}>
+                          <div>
+                            <div className={`font-bold text-sm ${dl ? 'text-red-400' : 'text-white'}`}>{d.label}</div>
+                            <div className="text-xs text-gray-500">{d.phase}</div>
                           </div>
+                          <button onClick={() => toggleDayLock(d.key)}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-bold text-xs transition-all ${
+                              dl
+                                ? 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25'
+                                : 'bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25'
+                            }`}>
+                            {dl ? <><Unlock size={12}/> Desbloquear día</> : <><Lock size={12}/> Bloquear día</>}
+                          </button>
                         </div>
-                        <button onClick={() => toggleDayLock(d.key)}
-                          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all ${
-                            locked
-                              ? 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25'
-                              : 'bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25'
-                          }`}>
-                          {locked ? <><Unlock size={14}/> Desbloquear</> : <><Lock size={14}/> Bloquear</>}
-                        </button>
+                        {/* Filas de partidos */}
+                        <div className="divide-y divide-white/5">
+                          {fromDate(d.key).map(m => {
+                            const ml = isAdminMatchLocked(m.id);
+                            return (
+                              <div key={m.id} className={`flex items-center justify-between px-3 py-2 ${ml ? 'bg-orange-500/5' : ''}`}>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <FlagImg team={m.home} size={18}/>
+                                  <span className="text-xs text-gray-300 truncate">{m.home}</span>
+                                  <span className="text-gray-600 text-xs">vs</span>
+                                  <span className="text-xs text-gray-300 truncate">{m.away}</span>
+                                  <FlagImg team={m.away} size={18}/>
+                                  <span className="text-gray-600 text-xs ml-1">{m.time}</span>
+                                </div>
+                                <button onClick={() => toggleMatchLockAdmin(m.id)}
+                                  className={`flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-bold text-xs transition-all ml-2 ${
+                                    dl ? 'opacity-40 cursor-not-allowed bg-white/5 text-gray-600 border border-white/10' :
+                                    ml
+                                      ? 'bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25'
+                                      : 'bg-orange-500/15 text-orange-400 border border-orange-500/30 hover:bg-orange-500/25'
+                                  }`}
+                                  disabled={dl}>
+                                  {ml ? <><Unlock size={10}/> Abrir</> : <><Lock size={10}/> Cerrar</>}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     );
                   })}
@@ -890,26 +1373,72 @@ export default function WorldCupPolla() {
                 ) : (
                   <>
                     {/* Selector de participante */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-4">
+                    <div className="space-y-2 mb-4">
                       {partList.map(p => (
-                        <button key={p.id} onClick={() => loadAdminUser(p.id)}
-                          className={`flex items-center gap-2 p-2.5 rounded-xl border text-left transition-all ${
-                            adminEditPid===p.id ? 'border-yellow-400 bg-yellow-400/10' : 'border-white/10 hover:border-white/25 hover:bg-white/5'
-                          }`}>
-                          <div className="w-8 h-8 rounded-full flex items-center justify-center font-black text-xs text-black flex-shrink-0"
-                            style={{ background:p.color }}>{p.initials}</div>
-                          <span className="text-sm font-semibold truncate">{p.name}</span>
-                        </button>
+                        <div key={p.id} className={`flex items-center gap-2 p-2.5 rounded-xl border transition-all ${
+                          adminEditPid===p.id ? 'border-yellow-400 bg-yellow-400/10' : 'border-white/10 bg-white/3'
+                        }`}>
+                          <button onClick={() => loadAdminUser(p.id)} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center font-black text-xs text-black flex-shrink-0"
+                              style={{ background:p.color }}>{p.initials}</div>
+                            <span className="text-sm font-semibold truncate">{p.name}</span>
+                          </button>
+                          {confirmDeletePid === p.id
+                            ? <div className="flex items-center gap-1.5 flex-shrink-0">
+                                <span className="text-xs text-red-400 font-bold">¿Eliminar?</span>
+                                <button onClick={() => deleteParticipant(p.id)}
+                                  className="px-2 py-1 rounded-lg text-xs font-black bg-red-500 text-white hover:bg-red-600 transition-all">
+                                  Sí
+                                </button>
+                                <button onClick={() => setConfirmDeletePid('')}
+                                  className="px-2 py-1 rounded-lg text-xs font-bold bg-white/10 text-gray-400 hover:bg-white/20 transition-all">
+                                  No
+                                </button>
+                              </div>
+                            : <button onClick={() => setConfirmDeletePid(p.id)}
+                                className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-gray-600 hover:text-red-400 hover:bg-red-500/15 transition-all">
+                                <Trash2 size={13}/>
+                              </button>
+                          }
+                        </div>
                       ))}
                     </div>
 
                     {adminEditPid && (
                       <>
                         <div className="border-t border-white/8 pt-4 mb-4">
-                          <p className="text-yellow-400 font-bold text-sm mb-3">
-                            Editando: <span className="text-white">{participants[adminEditPid]?.name}</span>
-                          </p>
+                          <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                            <p className="text-yellow-400 font-bold text-sm">
+                              Editando: <span className="text-white">{participants[adminEditPid]?.name}</span>
+                            </p>
+                            {/* Botón desbloquear día para este usuario */}
+                            {isDateFullyLocked(locked, adminEditPid, activeDate) && (
+                              <button
+                                onClick={() => adminUnlockUserDay(adminEditPid, activeDate)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25 transition-all"
+                              >
+                                <Unlock size={12}/> Desbloquear {DATES.find(d=>d.key===activeDate)?.short}
+                              </button>
+                            )}
+                          </div>
                           <DateTabs value={activeDate} onChange={setActiveDate}/>
+                          {/* Indicador de estado por día */}
+                          <div className="flex gap-2 mt-2">
+                            {DATES.map(d => {
+                              const fullyLocked = isDateFullyLocked(locked, adminEditPid, d.key);
+                              const partial = !fullyLocked && fromDate(d.key).some(m => isMatchLocked(locked, adminEditPid, m.id));
+                              return (
+                                <span key={d.key} className={`text-xs px-2 py-0.5 rounded-lg font-semibold flex items-center gap-1 ${
+                                  fullyLocked ? 'bg-green-500/15 text-green-400 border border-green-500/25' :
+                                  partial     ? 'bg-yellow-500/15 text-yellow-400 border border-yellow-500/25' :
+                                                'bg-white/5 text-gray-600 border border-white/10'
+                                }`}>
+                                  <Lock size={8}/>
+                                  {d.short} {fullyLocked ? '✓' : partial ? '~' : '–'}
+                                </span>
+                              );
+                            })}
+                          </div>
                         </div>
                         <div className="space-y-3">
                           {slotsFor(activeDate).map(time => (
@@ -968,7 +1497,7 @@ export default function WorldCupPolla() {
       </main>
 
       <footer className="text-center py-8 text-gray-600 text-xs">
-        Polla Mundial 2026 · 25–27 Jun · {FB_READY && connected ? 'Firebase sync' : 'Modo local'}
+        Polla Mundial 2026 · 25 Jun – 3 Jul · {FB_READY && connected ? 'Firebase sync' : 'Modo local'}
       </footer>
     </div>
   );
