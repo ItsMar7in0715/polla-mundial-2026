@@ -315,7 +315,7 @@ export default function WorldCupPolla() {
       initialRef.current = false;
       return;
     }
-
+   
     const unsub = onValue(ref(db, DB_PATH), (snap) => {
       setIsLoading(false); setConnected(true);
       const data = snap.val() || {};
