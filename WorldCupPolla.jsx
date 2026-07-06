@@ -276,7 +276,7 @@ export default function WorldCupPolla() {
   const [draft,        setDraft]        = useState({});
   const [activeDate,   setActiveDate]   = useState('03/07');
   const [adminMode,    setAdminMode]    = useState(false);
-  const [adminSection, setAdminSection] = useState('results'); // 'results' | 'days' | 'users'
+  const [adminSection, setAdminSection] = useState('results'); 
   const [adminEditPid,      setAdminEditPid]      = useState('');
   const [adminDraft,        setAdminDraft]        = useState({});
   const [confirmDeletePid,  setConfirmDeletePid]  = useState('');
